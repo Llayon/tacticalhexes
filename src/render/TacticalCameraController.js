@@ -24,6 +24,8 @@ export class TacticalCameraController {
     // Pitch: 42° gives optimal tabletop diorama depth for cliffs & elevation
     this.yaw = options.yaw ?? (Math.PI / 4)
     this.pitch = options.pitch ?? (42 * Math.PI / 180)
+    this.defaultYaw = this.yaw
+    this.defaultPitch = this.pitch
 
     // Distance limits (units)
     this.minDistance = options.minDistance ?? 20
@@ -91,8 +93,19 @@ export class TacticalCameraController {
   }
 
   // ==========================================
-  // Auto Framing
+  // Auto Framing & Reset
   // ==========================================
+
+  /**
+   * Reset camera to default tactical framing, fixed angles, and origin.
+   * @param {Object} [islandData] Optional IslandData domain object
+   * @param {Object} [options] { instant: boolean, aspect: number }
+   */
+  reset(islandData = null, options = {}) {
+    this.yaw = this.defaultYaw
+    this.pitch = this.defaultPitch
+    this.frameIsland(islandData, options)
+  }
 
   /**
    * Frame the island in the center of the viewport based on island size and aspect ratio.
@@ -215,6 +228,10 @@ export class TacticalCameraController {
   // Pointer & Touch Events
   // ==========================================
 
+  hasConsumedGesture() {
+    return this.isDragging || !!this._gestureConsumed
+  }
+
   _onPointerDown(e) {
     this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
     this._startPointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
@@ -222,11 +239,13 @@ export class TacticalCameraController {
     if (this._pointers.size === 1) {
       this._isPointerDown = true
       this.isDragging = false
+      this._gestureConsumed = false
       this._lastPointerPos = { x: e.clientX, y: e.clientY }
-    } else if (this._pointers.size === 2) {
+    } else if (this._pointers.size >= 2) {
       // Start two-finger pinch
       this._previousTouchDistance = this._getTouchDistance()
       this.isDragging = true
+      this._gestureConsumed = true
     }
   }
 
@@ -244,6 +263,7 @@ export class TacticalCameraController {
       // Check if threshold exceeded to start drag
       if (!this.isDragging && moveDistanceSq >= this.dragThreshold * this.dragThreshold) {
         this.isDragging = true
+        this._gestureConsumed = true
       }
 
       if (this.isDragging) {
@@ -253,8 +273,10 @@ export class TacticalCameraController {
       }
 
       this._lastPointerPos = { x: e.clientX, y: e.clientY }
-    } else if (this._pointers.size === 2) {
+    } else if (this._pointers.size >= 2) {
       // Two-finger pinch to zoom + pan
+      this.isDragging = true
+      this._gestureConsumed = true
       const currentTouchDistance = this._getTouchDistance()
       if (this._previousTouchDistance != null && currentTouchDistance != null) {
         const touchDelta = this._previousTouchDistance - currentTouchDistance
@@ -277,6 +299,12 @@ export class TacticalCameraController {
       this._isPointerDown = false
       this.isDragging = false
       this._previousTouchDistance = null
+      // Clear gesture consumed flag on next tick to allow any pending pointerup event listeners to query it
+      setTimeout(() => {
+        if (this._pointers.size === 0) {
+          this._gestureConsumed = false
+        }
+      }, 0)
     } else if (this._pointers.size === 1) {
       // Switched from pinch to 1 finger
       const remaining = Array.from(this._pointers.values())[0]

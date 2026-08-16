@@ -79,9 +79,17 @@ export function detectDefaultPreset(platform = null) {
 }
 
 export class GraphicsProfileManager {
-  constructor(viewport = null, initialPreset = null) {
-    this.viewport = viewport
-    this.currentPreset = initialPreset || detectDefaultPreset()
+  constructor(options = {}) {
+    // Support options object { viewport, platform, preset } or positional (viewport, platform, preset)
+    if (options && (options.viewport !== undefined || options.platform !== undefined || options.preset !== undefined)) {
+      this.viewport = options.viewport || null
+      this.platform = options.platform || null
+      this.currentPreset = options.preset || detectDefaultPreset(this.platform)
+    } else {
+      this.viewport = options || null
+      this.platform = arguments[1] || null
+      this.currentPreset = arguments[2] || detectDefaultPreset(this.platform)
+    }
     this.profile = GRAPHICS_PROFILES[this.currentPreset] || GRAPHICS_PROFILES[GraphicsPreset.MEDIUM]
     this._listeners = new Set()
   }

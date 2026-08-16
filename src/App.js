@@ -57,7 +57,7 @@ export class App {
     this.viewport = this.platform.viewport
     this._unsubscribeViewport = null
     this._unsubscribeProfile = null
-    this.graphicsProfile = new GraphicsProfileManager(this.viewport)
+    this.graphicsProfile = new GraphicsProfileManager({ viewport: this.viewport, platform: this.platform })
     this.renderer = null
     this.orthoCamera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 1000)
     this.perspCamera = new PerspectiveCamera(30, 1, 1, 1000)
@@ -85,18 +85,42 @@ export class App {
   }
 
   async init() {
-    if (WebGPU.isAvailable() === false) {
-      return
+    await this.platform.init()
+
+    let renderer = null
+    const hasWebGPU = WebGPU.isAvailable()
+
+    if (hasWebGPU) {
+      try {
+        renderer = new WebGPURenderer({ canvas: this.canvas, antialias: true })
+        await renderer.init()
+        console.log('[Renderer] WebGPU backend initialized')
+      } catch (err) {
+        console.warn('[Renderer] WebGPU initialization failed, attempting WebGL2 fallback:', err)
+        renderer = null
+      }
     }
 
-    await this.platform.init()
+    if (!renderer) {
+      try {
+        renderer = new WebGPURenderer({ canvas: this.canvas, antialias: true, forceWebGL: true })
+        await renderer.init()
+        console.log('[Renderer] WebGL2 fallback backend initialized')
+      } catch (fallbackErr) {
+        console.error('[Renderer] Both WebGPU and WebGL2 backends failed:', fallbackErr)
+        if (this.statusElement) {
+          this.statusElement.textContent = 'Graphics initialization failed: WebGPU / WebGL2 not supported.'
+        }
+        return
+      }
+    }
+
+    this.renderer = renderer
 
     const seed = Math.floor(Math.random() * 100000)
     setSeed(seed)
     console.log(`%c[SEED] ${seed}`, 'color: black')
     console.log(`%c[LEVELS] ${LEVELS_COUNT}`, 'color: black')
-    this.renderer = new WebGPURenderer({ canvas: this.canvas, antialias: true })
-    await this.renderer.init()
 
     const initialDpr = this.graphicsProfile.getEffectivePixelRatio()
     this.renderer.setPixelRatio(initialDpr)
@@ -106,8 +130,13 @@ export class App {
 
     this._unsubscribeViewport = this.viewport.subscribe(this.onResize.bind(this))
 
-    // Initialize params from defaults before creating modules
+    // Initialize params from defaults and sync initial state with active profile
     this.params = JSON.parse(JSON.stringify(GUIManager.defaultParams))
+    this.params.fx.ao = this.graphicsProfile.config.ao
+    this.params.fx.dof = this.graphicsProfile.config.dof
+    this.params.fx.grain = this.graphicsProfile.config.grain
+    this.params.fx.vignette = this.graphicsProfile.config.vignette
+    this.params.renderer.dpr = initialDpr
 
     this.initCamera()
     this.initPostProcessing()
@@ -116,11 +145,6 @@ export class App {
     this.initStatusOverlay()
     this.initModeButtons()
 
-    // Subscribe to profile changes (HIGH, MEDIUM, LOW)
-    this._unsubscribeProfile = this.graphicsProfile.subscribe((profile, dpr) => {
-      this.applyGraphicsProfile(profile, dpr)
-    })
-
     this.seedElement.textContent = `seed: ${seed}`
 
     this.onResize()
@@ -128,7 +152,8 @@ export class App {
       this.renderer,
       this.camera,
       new Plane(new Vector3(0, 1, 0), 0),
-      this.viewport
+      this.viewport,
+      { cameraController: this.cameraController }
     )
 
     // Initialize modules
@@ -280,6 +305,14 @@ export class App {
     this.gui.gui.domElement.classList.add('gui-hidden')
     this.gui.applyParams()
 
+    // Consistently apply active GraphicsProfile across all systems now that Renderer, PostFX, Lighting, GUI exist
+    this.applyGraphicsProfile(this.graphicsProfile.config, initialDpr)
+
+    // Subscribe to profile changes (HIGH, MEDIUM, LOW)
+    this._unsubscribeProfile = this.graphicsProfile.subscribe((profile, dpr) => {
+      this.applyGraphicsProfile(profile, dpr)
+    })
+
     // Move FPS meter into GUI panel, above DPR
     this.stats.dom.style.display = ''
     this.stats.dom.style.position = 'relative'
@@ -376,16 +409,14 @@ export class App {
     this.dofBokehScale = this.postFX.dofBokehScale
     this.grainEnabled = this.postFX.grainEnabled
     this.grainStrength = this.postFX.grainStrength
-
-    // Apply active graphics profile settings to PostFX and Renderer
-    const effectiveDpr = this.graphicsProfile.getEffectivePixelRatio()
-    this.applyGraphicsProfile(this.graphicsProfile.config, effectiveDpr)
   }
 
   applyGraphicsProfile(profile, effectiveDpr) {
     if (this.renderer) {
       this.renderer.setPixelRatio(effectiveDpr)
-      this.renderer.shadowMap.enabled = profile.shadows
+      if (this.renderer.shadowMap) {
+        this.renderer.shadowMap.enabled = profile.shadows
+      }
     }
 
     if (this.postFX) {
@@ -399,6 +430,23 @@ export class App {
     if (this.lighting) {
       this.lighting.setShadowsEnabled(profile.shadows)
       this.lighting.setShadowMapSize(profile.shadowMapSize)
+    }
+
+    // Sync app.params so GUI controls and internal state match the profile baseline
+    if (this.params) {
+      if (this.params.fx) {
+        this.params.fx.ao = profile.ao
+        this.params.fx.dof = profile.dof
+        this.params.fx.grain = profile.grain
+        this.params.fx.vignette = profile.vignette
+      }
+      if (this.params.renderer) {
+        this.params.renderer.dpr = effectiveDpr
+      }
+    }
+
+    if (this.gui) {
+      this.gui.syncProfileDisplay(profile, effectiveDpr)
     }
 
     this.onResize()

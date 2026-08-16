@@ -105,11 +105,21 @@ export class GUIManager {
     this.gui = gui
 
     // Store params on app for single source of truth
-    const allParams = app.params = JSON.parse(JSON.stringify(GUIManager.defaultParams))
+    const allParams = app.params || JSON.parse(JSON.stringify(GUIManager.defaultParams))
+    app.params = allParams
+
+    // Initialize fx parameters based on active graphics profile baseline
+    if (app.graphicsProfile) {
+      const cfg = app.graphicsProfile.config
+      allParams.fx.ao = cfg.ao
+      allParams.fx.dof = cfg.dof
+      allParams.fx.grain = cfg.grain
+      allParams.fx.vignette = cfg.vignette
+      allParams.renderer.dpr = app.graphicsProfile.getEffectivePixelRatio()
+    }
 
     // Quality Profile dropdown (HIGH, MEDIUM, LOW)
-    const qualityObj = { quality: app.graphicsProfile?.currentPreset || 'HIGH' }
-    gui.add(qualityObj, 'quality', ['HIGH', 'MEDIUM', 'LOW']).name('Quality Preset').onChange((preset) => {
+    this.qualityController = gui.add({ quality: app.graphicsProfile?.currentPreset || 'HIGH' }, 'quality', ['HIGH', 'MEDIUM', 'LOW']).name('Quality Preset').onChange((preset) => {
       app.graphicsProfile?.setPreset(preset)
     })
 
@@ -195,18 +205,21 @@ export class GUIManager {
     gui.add({ exportPNG: () => app.exportPNG() }, 'exportPNG').name('Export JPG')
 
     gui.add({ resetCamera: () => {
-      app.perspCamera.position.set(0, 48, 36)
-      app.controls.target.set(0, 1, 0)
-      app.controls.update()
+      app.cameraController?.reset(app.city?.currentIsland || { radius: 5 }, { instant: true, aspect: app.viewport?.getAspect() || 1 })
     } }, 'resetCamera').name('Reset Camera')
 
     gui.add({
       copyState: () => {
+        const c = app.cameraController
+        const cam = app.camera
         const exportData = {
           ...allParams,
           cameraState: {
-            position: { x: app.camera.position.x, y: app.camera.position.y, z: app.camera.position.z },
-            target: { x: app.controls.target.x, y: app.controls.target.y, z: app.controls.target.z },
+            position: { x: cam.position.x, y: cam.position.y, z: cam.position.z },
+            target: { x: c?.currentTarget?.x ?? 0, y: c?.currentTarget?.y ?? 0, z: c?.currentTarget?.z ?? 0 },
+            distance: c?.currentDistance ?? cam.position.distanceTo(c?.currentTarget || cam.position),
+            pitch: c?.pitch ?? 0,
+            yaw: c?.yaw ?? 0,
           }
         }
         const json = JSON.stringify(exportData, null, 2)
@@ -216,16 +229,19 @@ export class GUIManager {
     }, 'copyState').name('Copy GUI State')
     gui.add({
       logControls: () => {
-        const c = app.controls
+        const c = app.cameraController
         const cam = app.camera
-        console.log('OrbitControls State:')
+        console.log('Tactical Camera State:')
         console.log('  camera.position:', cam.position.x.toFixed(3), cam.position.y.toFixed(3), cam.position.z.toFixed(3))
-        console.log('  target:', c.target.x.toFixed(3), c.target.y.toFixed(3), c.target.z.toFixed(3))
-        console.log('  distance:', cam.position.distanceTo(c.target).toFixed(3))
-        console.log('  polar angle (vertical):', c.getPolarAngle().toFixed(3), 'rad =', (c.getPolarAngle() * 180 / Math.PI).toFixed(1) + '°')
-        console.log('  azimuth angle (horizontal):', c.getAzimuthalAngle().toFixed(3), 'rad =', (c.getAzimuthalAngle() * 180 / Math.PI).toFixed(1) + '°')
+        if (c) {
+          console.log('  target:', c.target.x.toFixed(3), c.target.y.toFixed(3), c.target.z.toFixed(3))
+          console.log('  currentTarget:', c.currentTarget.x.toFixed(3), c.currentTarget.y.toFixed(3), c.currentTarget.z.toFixed(3))
+          console.log('  distance:', c.currentDistance.toFixed(3))
+          console.log('  pitch:', (c.pitch * 180 / Math.PI).toFixed(1) + '°')
+          console.log('  yaw:', (c.yaw * 180 / Math.PI).toFixed(1) + '°')
+        }
       }
-    }, 'logControls').name('Log Orbit State')
+    }, 'logControls').name('Log Tactical Camera')
 
     // Decoration folder
     const decorationFolder = gui.addFolder('Decoration').close()
@@ -436,9 +452,10 @@ export class GUIManager {
     // Camera
     app.perspCamera.fov = params.camera.fov
     app.perspCamera.updateProjectionMatrix()
-    app.controls.maxPolarAngle = params.debug.debugCam ? Math.PI : 1.424
-    app.controls.minDistance = params.debug.debugCam ? 0 : 25
-    app.controls.maxDistance = params.debug.debugCam ? Infinity : 410
+    if (app.cameraController) {
+      app.cameraController.minDistance = params.debug.debugCam ? 5 : 20
+      app.cameraController.maxDistance = params.debug.debugCam ? 200 : 90
+    }
     app.city.setAxesHelpersVisible(params.debug.originHelper)
 
     // Hex helper visibility
@@ -472,5 +489,13 @@ export class GUIManager {
 
     // Renderer
     app.renderer.setPixelRatio(params.renderer.dpr)
+  }
+
+  // Synchronize all GUI controls to match updated params/profile
+  syncProfileDisplay(profile, effectiveDpr) {
+    if (!this.gui) return
+    for (const controller of this.gui.controllersRecursive()) {
+      controller.updateDisplay()
+    }
   }
 }

@@ -1,16 +1,18 @@
 import { Raycaster, Vector2, Vector3 } from 'three/webgpu'
 import { uniform } from 'three/tsl'
 
-const CLICK_THRESHOLD = 5 // Max pixels between pointerdown and pointerup to count as a click
+const CLICK_THRESHOLD = 6 // Max pixels between pointerdown and pointerup to count as a click (aligned with TacticalCameraController)
 
 /**
  * Helper class to handle pointer position and "down" with output exposed in vector3 and uniforms
  */
 export class Pointer {
-  constructor(renderer, camera, plane, viewport = null) {
+  constructor(renderer, camera, plane, viewport = null, options = {}) {
     this.camera = camera
     this.renderer = renderer
     this.viewport = viewport
+    this.cameraController = options.cameraController || null
+    this.dragThreshold = options.dragThreshold ?? CLICK_THRESHOLD
     this.rayCaster = new Raycaster()
     this.initPlane = plane
     this.iPlane = plane.clone()
@@ -84,10 +86,12 @@ export class Pointer {
     this.updateScreenPointer(e)
 
     if (this.pointerDown) {
-      // Check if pointer moved less than threshold — it's a click, not a drag
+      // Check if pointer moved less than threshold and camera didn't consume gesture
       const dx = e.clientX - this.downClientX
       const dy = e.clientY - this.downClientY
-      const isClick = (dx * dx + dy * dy) < CLICK_THRESHOLD * CLICK_THRESHOLD
+      const isMoved = (dx * dx + dy * dy) >= this.dragThreshold * this.dragThreshold
+      const isCameraGesture = this.cameraController?.hasConsumedGesture?.() || this.cameraController?.isDragging || false
+      const isClick = !isMoved && !isCameraGesture
 
       if (isClick && this.onPointerDownCallback) {
         // Raycast using the pointerup position
