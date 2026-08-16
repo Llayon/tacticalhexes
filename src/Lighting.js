@@ -170,4 +170,24 @@ export class Lighting {
       this.dirLightHelper.update()
     }
   }
+
+  setShadowsEnabled(enabled) {
+    if (this.dirLight) {
+      this.dirLight.castShadow = enabled
+    }
+    if (this.renderer && this.renderer.shadowMap) {
+      this.renderer.shadowMap.enabled = enabled
+    }
+  }
+
+  setShadowMapSize(size) {
+    if (this.dirLight && this.dirLight.shadow) {
+      this.dirLight.shadow.mapSize.width = size
+      this.dirLight.shadow.mapSize.height = size
+      if (this.dirLight.shadow.map) {
+        this.dirLight.shadow.map.dispose()
+        this.dirLight.shadow.map = null
+      }
+    }
+  }
 }

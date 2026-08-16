@@ -46,15 +46,16 @@ export class BrowserPlatform {
   }
 
   async requestFullscreen() {
+    if (this.isFullscreen) return true
     if (typeof document === 'undefined') return false
     try {
       const el = document.documentElement
       if (el.requestFullscreen) {
         await el.requestFullscreen()
-        return true
+        return this.isFullscreen
       } else if (el.webkitRequestFullscreen) {
         await el.webkitRequestFullscreen()
-        return true
+        return this.isFullscreen
       }
     } catch (err) {
       console.warn('[BrowserPlatform] Fullscreen request non-fatal error:', err?.message || err)
@@ -63,14 +64,15 @@ export class BrowserPlatform {
   }
 
   async exitFullscreen() {
+    if (!this.isFullscreen) return true
     if (typeof document === 'undefined') return false
     try {
       if (document.exitFullscreen) {
         await document.exitFullscreen()
-        return true
+        return !this.isFullscreen
       } else if (document.webkitExitFullscreen) {
         await document.webkitExitFullscreen()
-        return true
+        return !this.isFullscreen
       }
     } catch (err) {
       console.warn('[BrowserPlatform] Exit fullscreen error:', err?.message || err)

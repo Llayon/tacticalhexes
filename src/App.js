@@ -9,7 +9,7 @@ import {
   WebGPURenderer,
   PCFShadowMap,
 } from 'three/webgpu'
-import { OrbitControls, CSS2DRenderer } from 'three/examples/jsm/Addons.js'
+import { CSS2DRenderer } from 'three/examples/jsm/Addons.js'
 import Stats from 'three/addons/libs/stats.module.js'
 import WebGPU from 'three/examples/jsm/capabilities/WebGPU.js'
 import { Pointer } from './lib/Pointer.js'
@@ -21,6 +21,8 @@ import { WavesMask } from './hexmap/effects/WavesMask.js'
 import { setSeed } from './SeededRandom.js'
 import { LEVELS_COUNT } from './hexmap/HexTileData.js'
 import { getPlatform } from './platform/index.js'
+import { GraphicsProfileManager } from './render/GraphicsProfile.js'
+import { TacticalCameraController } from './render/TacticalCameraController.js'
 import gsap from 'gsap'
 
 // Global status update function
@@ -54,11 +56,14 @@ export class App {
     this.platform = platform || getPlatform()
     this.viewport = this.platform.viewport
     this._unsubscribeViewport = null
+    this._unsubscribeProfile = null
+    this.graphicsProfile = new GraphicsProfileManager(this.viewport)
     this.renderer = null
     this.orthoCamera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 1000)
     this.perspCamera = new PerspectiveCamera(30, 1, 1, 1000)
     this.camera = this.perspCamera
-    this.controls = null
+    this.cameraController = null
+    this.controls = null // Alias for backward compatibility
     this.postFX = null
     this.scene = new Scene()
     this.pointerHandler = null
@@ -92,10 +97,11 @@ export class App {
     console.log(`%c[LEVELS] ${LEVELS_COUNT}`, 'color: black')
     this.renderer = new WebGPURenderer({ canvas: this.canvas, antialias: true })
     await this.renderer.init()
-    // DPR 2 with half-res AO gives good quality/perf balance
-    this.renderer.setPixelRatio(this.viewport.getPixelRatio())
+
+    const initialDpr = this.graphicsProfile.getEffectivePixelRatio()
+    this.renderer.setPixelRatio(initialDpr)
     this.renderer.setSize(this.viewport.getWidth(), this.viewport.getHeight())
-    this.renderer.shadowMap.enabled = true
+    this.renderer.shadowMap.enabled = this.graphicsProfile.config.shadows
     this.renderer.shadowMap.type = PCFShadowMap
 
     this._unsubscribeViewport = this.viewport.subscribe(this.onResize.bind(this))
@@ -109,6 +115,11 @@ export class App {
     this.initCSSRenderer()
     this.initStatusOverlay()
     this.initModeButtons()
+
+    // Subscribe to profile changes (HIGH, MEDIUM, LOW)
+    this._unsubscribeProfile = this.graphicsProfile.subscribe((profile, dpr) => {
+      this.applyGraphicsProfile(profile, dpr)
+    })
 
     this.seedElement.textContent = `seed: ${seed}`
 
@@ -310,48 +321,24 @@ export class App {
   }
 
   initCamera() {
-    // Isometric camera setup
-    const isoAngle = Math.PI / 4 // 45 degrees
-    const isoDist = 70
-
-    const camPos = new Vector3(
-      Math.cos(isoAngle) * isoDist,
-      isoDist * 0.75,
-      Math.sin(isoAngle) * isoDist
-    )
-
-    // Set up orthographic camera
-    this.orthoCamera.position.copy(camPos)
-    this.updateOrthoFrustum()
-
-    // Set up perspective camera - framed for radius 5 island
+    // Tactical perspective camera setup
     this.perspCamera.position.set(0, 48, 36)
     this.perspCamera.fov = 24
     this.updatePerspFrustum()
 
-    this.controls = new OrbitControls(this.camera, this.canvas)
-    this.controls.enableDamping = true
-    this.controls.dampingFactor = 0.1
-    this.controls.enableRotate = true
-    // Swap mouse buttons: left=pan, right=rotate (like Townscaper)
-    this.controls.mouseButtons = {
-      LEFT: 2,  // PAN
-      MIDDLE: 1, // DOLLY
-      RIGHT: 0   // ROTATE
-    }
-    // Touch: 1 finger=rotate, 2 fingers=pan+zoom (OrbitControls default)
-    this.controls.touches = {
-      ONE: 0,  // TOUCH.ROTATE
-      TWO: 2   // TOUCH.DOLLY_PAN
-    }
-    // Zoom/rotation limits - comfortable for single island
-    this.controls.minDistance = 15
-    this.controls.maxDistance = 200
-    this.controls.maxPolarAngle = 1.424
-    // Pan parallel to ground plane instead of screen
-    this.controls.screenSpacePanning = false
-    this.controls.target.set(0, 1, 0)
-    this.controls.update()
+    // Instantiate mobile-first TacticalCameraController
+    this.cameraController = new TacticalCameraController(this.perspCamera, this.canvas, {
+      mode: 'tactical',
+      minDistance: 20,
+      maxDistance: 90,
+      defaultDistance: 52,
+      panLimitRadius: 35,
+    })
+    this.controls = this.cameraController // Backward-compatible alias
+
+    // Frame initial island
+    const aspect = this.viewport?.getAspect() || 1.0
+    this.cameraController.frameIsland({ radius: 5 }, { instant: true, aspect })
   }
 
   updateOrthoFrustum() {
@@ -365,7 +352,9 @@ export class App {
   }
 
   updatePerspFrustum() {
-    this.perspCamera.aspect = this.viewport?.getAspect() || ((typeof window !== 'undefined' ? window.innerWidth : 800) / (typeof window !== 'undefined' ? window.innerHeight : 600))
+    const aspect = this.viewport?.getAspect() || ((typeof window !== 'undefined' ? window.innerWidth : 800) / (typeof window !== 'undefined' ? window.innerHeight : 600))
+    this.cameraController?.updateProjection(aspect)
+    this.perspCamera.aspect = aspect
     this.perspCamera.updateProjectionMatrix()
   }
 
@@ -387,6 +376,32 @@ export class App {
     this.dofBokehScale = this.postFX.dofBokehScale
     this.grainEnabled = this.postFX.grainEnabled
     this.grainStrength = this.postFX.grainStrength
+
+    // Apply active graphics profile settings to PostFX and Renderer
+    const effectiveDpr = this.graphicsProfile.getEffectivePixelRatio()
+    this.applyGraphicsProfile(this.graphicsProfile.config, effectiveDpr)
+  }
+
+  applyGraphicsProfile(profile, effectiveDpr) {
+    if (this.renderer) {
+      this.renderer.setPixelRatio(effectiveDpr)
+      this.renderer.shadowMap.enabled = profile.shadows
+    }
+
+    if (this.postFX) {
+      this.postFX.setEffectivePixelRatio(effectiveDpr)
+      this.postFX.aoEnabled.value = profile.ao ? 1 : 0
+      this.postFX.dofEnabled.value = profile.dof ? 1 : 0
+      this.postFX.grainEnabled.value = profile.grain ? 1 : 0
+      this.postFX.vignetteEnabled.value = profile.vignette ? 1 : 0
+    }
+
+    if (this.lighting) {
+      this.lighting.setShadowsEnabled(profile.shadows)
+      this.lighting.setShadowMapSize(profile.shadowMapSize)
+    }
+
+    this.onResize()
   }
 
   initStats() {
@@ -549,14 +564,16 @@ export class App {
   }
 
   onResize(_e, toSize) {
-    const { renderer, cssRenderer, postFX, viewport } = this
+    const { renderer, cssRenderer, postFX, viewport, graphicsProfile } = this
     const width = toSize?.width ?? toSize?.x ?? viewport?.getWidth() ?? (typeof window !== 'undefined' ? window.innerWidth : 800)
     const height = toSize?.height ?? toSize?.y ?? viewport?.getHeight() ?? (typeof window !== 'undefined' ? window.innerHeight : 600)
+    const effectiveDpr = graphicsProfile?.getEffectivePixelRatio() ?? (viewport?.getPixelRatio() || 1)
 
     this.updateOrthoFrustum()
     this.updatePerspFrustum()
 
     if (renderer) {
+      renderer.setPixelRatio(effectiveDpr)
       renderer.setSize(width, height)
       renderer.domElement.style.width = `${width}px`
       renderer.domElement.style.height = `${height}px`
@@ -566,30 +583,31 @@ export class App {
       cssRenderer.setSize(width, height)
     }
 
-    // Resize overlay and postfx render targets
+    // Resize overlay and postfx render targets with effective DPR
     if (postFX) {
-      postFX.resize(width, height)
+      postFX.resize(width, height, effectiveDpr)
     }
   }
 
   animate() {
     this.stats.begin()
 
-    const { controls, timer, postFX } = this
+    const { timer, postFX, cameraController } = this
 
     timer.update()
     const dt = timer.getDelta()
 
-    controls.update(dt)
-    // Clamp target Y to prevent panning under the city
-    if (controls.target.y < 0) controls.target.y = 0
-    this.lighting.updateShadowCamera(this.controls.target, this.camera, this.orthoCamera, this.perspCamera)
+    if (cameraController) {
+      cameraController.update(dt)
+      if (cameraController.target.y < 0) cameraController.target.y = 0
+      this.lighting.updateShadowCamera(cameraController.currentTarget, this.camera, this.orthoCamera, this.perspCamera)
 
-    // Auto-focus DOF on orbit target, scale focal length with zoom
-    const dist = this.camera.position.distanceTo(controls.target)
-    postFX.dofFocus.value = dist
-    const t = Math.min(Math.max((dist - 25) / (410 - 25), 0), 1) // 0=zoomed in, 1=zoomed out
-    postFX.dofFocalLength.value = 20 + t * 80 // 20 at close, 100 at far
+      // Auto-focus DOF on tactical camera target, scale focal length with zoom
+      const dist = this.camera.position.distanceTo(cameraController.currentTarget)
+      postFX.dofFocus.value = dist
+      const t = Math.min(Math.max((dist - 20) / (90 - 20), 0), 1) // 0=zoomed in, 1=zoomed out
+      postFX.dofFocalLength.value = 20 + t * 80 // 20 at close, 100 at far
+    }
 
     // Animate grain noise — quantize to noiseFPS for film-like grain (0 = static)
     const noiseFPS = this.params.fx.grainFPS

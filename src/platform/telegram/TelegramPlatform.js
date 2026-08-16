@@ -101,18 +101,49 @@ export class TelegramPlatform {
   }
 
   /**
-   * Request fullscreen mode (Telegram Bot API 8.0+ / WebApp v8.0+)
+   * Request fullscreen mode (Telegram Bot API 8.0+ / WebApp v8.0+).
    * Falls back to standard browser fullscreen if available.
-   * Fullscreen results are asynchronous and confirmed via fullscreenChanged / fullscreenFailed events.
+   * Fullscreen results in Telegram are asynchronous and confirmed via 'fullscreenChanged' or 'fullscreenFailed'.
+   * @returns {Promise<boolean>} Resolves to true if fullscreen was entered, false otherwise.
    */
   async requestFullscreen() {
+    if (this.isFullscreen) return true
+
     if (this.webApp && typeof this.webApp.requestFullscreen === 'function') {
-      try {
-        this.webApp.requestFullscreen()
-        return true
-      } catch (err) {
-        console.warn('[TelegramPlatform] Telegram requestFullscreen non-fatal error:', err?.message || err)
-      }
+      return new Promise((resolve) => {
+        let cleanup = () => {}
+        const timer = setTimeout(() => {
+          cleanup()
+          resolve(this.isFullscreen)
+        }, 1500)
+
+        const onChange = (payload) => {
+          cleanup()
+          resolve(Boolean(payload?.isFullscreen))
+        }
+
+        const onFailed = () => {
+          cleanup()
+          resolve(false)
+        }
+
+        const unsubChange = this.onFullscreenChange(onChange)
+        const unsubFailed = this.onFullscreenFailed(onFailed)
+
+        cleanup = () => {
+          clearTimeout(timer)
+          unsubChange()
+          unsubFailed()
+        }
+
+        try {
+          this.webApp.requestFullscreen()
+        } catch (err) {
+          console.warn('[TelegramPlatform] Telegram requestFullscreen error:', err?.message || err)
+          cleanup()
+          resolve(false)
+        }
+      })
     }
 
     // Fallback to standard DOM fullscreen
@@ -121,10 +152,10 @@ export class TelegramPlatform {
         const el = document.documentElement
         if (el.requestFullscreen) {
           await el.requestFullscreen()
-          return true
+          return this.isFullscreen
         } else if (el.webkitRequestFullscreen) {
           await el.webkitRequestFullscreen()
-          return true
+          return this.isFullscreen
         }
       } catch (err) {
         console.warn('[TelegramPlatform] DOM requestFullscreen non-fatal error:', err?.message || err)
@@ -134,26 +165,51 @@ export class TelegramPlatform {
   }
 
   /**
-   * Exit fullscreen mode
+   * Exit fullscreen mode.
+   * In Telegram, confirmed asynchronously via 'fullscreenChanged'.
+   * @returns {Promise<boolean>} Resolves to true if fullscreen was exited.
    */
   async exitFullscreen() {
+    if (!this.isFullscreen) return true
+
     if (this.webApp && typeof this.webApp.exitFullscreen === 'function') {
-      try {
-        this.webApp.exitFullscreen()
-        return true
-      } catch (err) {
-        console.warn('[TelegramPlatform] Telegram exitFullscreen error:', err?.message || err)
-      }
+      return new Promise((resolve) => {
+        let cleanup = () => {}
+        const timer = setTimeout(() => {
+          cleanup()
+          resolve(!this.isFullscreen)
+        }, 1500)
+
+        const onChange = (payload) => {
+          cleanup()
+          resolve(!payload?.isFullscreen)
+        }
+
+        const unsubChange = this.onFullscreenChange(onChange)
+
+        cleanup = () => {
+          clearTimeout(timer)
+          unsubChange()
+        }
+
+        try {
+          this.webApp.exitFullscreen()
+        } catch (err) {
+          console.warn('[TelegramPlatform] Telegram exitFullscreen error:', err?.message || err)
+          cleanup()
+          resolve(!this.isFullscreen)
+        }
+      })
     }
 
     if (typeof document !== 'undefined') {
       try {
         if (document.exitFullscreen) {
           await document.exitFullscreen()
-          return true
+          return !this.isFullscreen
         } else if (document.webkitExitFullscreen) {
           await document.webkitExitFullscreen()
-          return true
+          return !this.isFullscreen
         }
       } catch (err) {
         console.warn('[TelegramPlatform] DOM exitFullscreen error:', err?.message || err)

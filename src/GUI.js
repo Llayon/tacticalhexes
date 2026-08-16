@@ -107,11 +107,10 @@ export class GUIManager {
     // Store params on app for single source of truth
     const allParams = app.params = JSON.parse(JSON.stringify(GUIManager.defaultParams))
 
-    // DPR dropdown (default 1)
-    allParams.renderer.dpr = 1
-    gui.add(allParams.renderer, 'dpr', [1, 1.5, 2]).name('DPR').onChange((v) => {
-      app.renderer.setPixelRatio(v)
-      app.onResize()
+    // Quality Profile dropdown (HIGH, MEDIUM, LOW)
+    const qualityObj = { quality: app.graphicsProfile?.currentPreset || 'HIGH' }
+    gui.add(qualityObj, 'quality', ['HIGH', 'MEDIUM', 'LOW']).name('Quality Preset').onChange((preset) => {
+      app.graphicsProfile?.setPreset(preset)
     })
 
     // Top-level controls (no folder)
@@ -129,11 +128,6 @@ export class GUIManager {
     // Visual toggles at top level
     gui.add(allParams.debug, 'originHelper').name('Axes Helpers').onChange((v) => {
       app.city.setAxesHelpersVisible(v)
-    })
-    gui.add(allParams.debug, 'debugCam').name('Debug Cam').onChange((v) => {
-      app.controls.maxPolarAngle = v ? Math.PI : 1.424
-      app.controls.minDistance = v ? 0 : 25
-      app.controls.maxDistance = v ? Infinity : 410
     })
     gui.add(allParams.debug, 'hexGrid').name('Cell Outlines').onChange((v) => {
       app.city.setHelpersVisible(v)

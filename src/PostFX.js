@@ -55,7 +55,8 @@ export class PostFX {
     // Fade to black (0 = black, 1 = fully visible)
     this.fadeOpacity = uniform(1)
 
-    const dpr = this.viewport?.getPixelRatio() ?? Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2)
+    this.effectiveDpr = null // If null, derives from viewport/devicePixelRatio
+    const dpr = this._getDpr()
     const baseW = this.viewport?.getWidth() || (typeof window !== 'undefined' ? window.innerWidth : 800)
     const baseH = this.viewport?.getHeight() || (typeof window !== 'undefined' ? window.innerHeight : 600)
     const w = baseW * dpr
@@ -211,11 +212,21 @@ export class PostFX {
     this._buildPipeline()
   }
 
+  _getDpr(dprOverride) {
+    if (dprOverride != null && dprOverride > 0) return dprOverride
+    if (this.effectiveDpr != null && this.effectiveDpr > 0) return this.effectiveDpr
+    return this.viewport?.getPixelRatio() ?? Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2)
+  }
+
+  setEffectivePixelRatio(dpr) {
+    this.effectiveDpr = dpr
+  }
+
   /**
    * Resize render targets
    */
-  resize(width, height) {
-    const dpr = this.viewport?.getPixelRatio() ?? Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2)
+  resize(width, height, dprOverride = null) {
+    const dpr = this._getDpr(dprOverride)
     const baseW = width || this.viewport?.getWidth() || (typeof window !== 'undefined' ? window.innerWidth : 800)
     const baseH = height || this.viewport?.getHeight() || (typeof window !== 'undefined' ? window.innerHeight : 600)
     const w = baseW * dpr
