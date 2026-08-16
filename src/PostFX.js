@@ -22,10 +22,11 @@ import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { dof } from 'three/addons/tsl/display/DepthOfFieldNode.js'
 
 export class PostFX {
-  constructor(renderer, scene, camera) {
+  constructor(renderer, scene, camera, viewport = null) {
     this.renderer = renderer
     this.scene = scene
     this.camera = camera
+    this.viewport = viewport
 
     this.postProcessing = new RenderPipeline(renderer)
 
@@ -54,9 +55,11 @@ export class PostFX {
     // Fade to black (0 = black, 1 = fully visible)
     this.fadeOpacity = uniform(1)
 
-    const dpr = Math.min(window.devicePixelRatio, 2)
-    const w = window.innerWidth * dpr
-    const h = window.innerHeight * dpr
+    const dpr = Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2)
+    const baseW = this.viewport?.getWidth() || (typeof window !== 'undefined' ? window.innerWidth : 800)
+    const baseH = this.viewport?.getHeight() || (typeof window !== 'undefined' ? window.innerHeight : 600)
+    const w = baseW * dpr
+    const h = baseH * dpr
 
     // Overlay render target (UI elements — no depth test, no AO)
     this.overlayTarget = new RenderTarget(w, h, { samples: 1 })
@@ -211,10 +214,12 @@ export class PostFX {
   /**
    * Resize render targets
    */
-  resize() {
-    const dpr = Math.min(window.devicePixelRatio, 2)
-    const w = window.innerWidth * dpr
-    const h = window.innerHeight * dpr
+  resize(width, height) {
+    const dpr = Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2)
+    const baseW = width || this.viewport?.getWidth() || (typeof window !== 'undefined' ? window.innerWidth : 800)
+    const baseH = height || this.viewport?.getHeight() || (typeof window !== 'undefined' ? window.innerHeight : 600)
+    const w = baseW * dpr
+    const h = baseH * dpr
     this.overlayTarget.setSize(w, h)
     this.waterTarget.setSize(w, h)
     this.waterMaskTarget.setSize(Math.ceil(w / 4), Math.ceil(h / 4))

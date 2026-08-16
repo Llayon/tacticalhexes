@@ -7,9 +7,10 @@ const CLICK_THRESHOLD = 5 // Max pixels between pointerdown and pointerup to cou
  * Helper class to handle pointer position and "down" with output exposed in vector3 and uniforms
  */
 export class Pointer {
-  constructor(renderer, camera, plane) {
+  constructor(renderer, camera, plane, viewport = null) {
     this.camera = camera
     this.renderer = renderer
+    this.viewport = viewport
     this.rayCaster = new Raycaster()
     this.initPlane = plane
     this.iPlane = plane.clone()
@@ -32,6 +33,27 @@ export class Pointer {
     renderer.domElement.addEventListener('pointerup', this.onPointerUp.bind(this))
     window.addEventListener('pointermove', this.onPointerMove.bind(this))
     renderer.domElement.addEventListener('contextmenu', this.onContextMenu.bind(this))
+  }
+
+  getNormalizedDeviceCoords(clientX, clientY, target = this.pointer) {
+    const dom = this.renderer?.domElement
+    if (dom) {
+      const rect = dom.getBoundingClientRect()
+      if (rect.width > 0 && rect.height > 0) {
+        return target.set(
+          ((clientX - rect.left) / rect.width) * 2 - 1,
+          -((clientY - rect.top) / rect.height) * 2 + 1
+        )
+      }
+    }
+
+    const width = this.viewport?.getWidth() || (typeof window !== 'undefined' ? window.innerWidth : 800)
+    const height = this.viewport?.getHeight() || (typeof window !== 'undefined' ? window.innerHeight : 600)
+
+    return target.set(
+      (clientX / width) * 2 - 1,
+      -(clientY / height) * 2 + 1
+    )
   }
 
   setRaycastTargets(targets, callbacks) {
@@ -69,10 +91,7 @@ export class Pointer {
 
       if (isClick && this.onPointerDownCallback) {
         // Raycast using the pointerup position
-        this.pointer.set(
-          (e.clientX / window.innerWidth) * 2 - 1,
-          -(e.clientY / window.innerHeight) * 2 + 1
-        )
+        this.getNormalizedDeviceCoords(e.clientX, e.clientY, this.pointer)
         this.rayCaster.setFromCamera(this.pointer, this.camera)
         const intersects = this.raycastTargets.length > 0
           ? this.rayCaster.intersectObjects(this.raycastTargets, false)
@@ -104,10 +123,7 @@ export class Pointer {
     if (e == null || e == undefined) {
       e = { clientX: this.clientPointer.x, clientY: this.clientPointer.y }
     }
-    this.pointer.set(
-      (e.clientX / window.innerWidth) * 2 - 1,
-      -(e.clientY / window.innerHeight) * 2 + 1
-    )
+    this.getNormalizedDeviceCoords(e.clientX, e.clientY, this.pointer)
     this.rayCaster.setFromCamera(this.pointer, this.camera)
     this.rayCaster.ray.intersectPlane(this.iPlane, this.scenePointer)
     this.uPointer.value.x = this.scenePointer.x
@@ -126,10 +142,7 @@ export class Pointer {
 
     // Raycast for right-click detection
     if (this.raycastTargets.length > 0 && this.onRightClickCallback) {
-      this.pointer.set(
-        (e.clientX / window.innerWidth) * 2 - 1,
-        -(e.clientY / window.innerHeight) * 2 + 1
-      )
+      this.getNormalizedDeviceCoords(e.clientX, e.clientY, this.pointer)
       this.rayCaster.setFromCamera(this.pointer, this.camera)
       const intersects = this.rayCaster.intersectObjects(this.raycastTargets, false)
       if (intersects.length > 0) {

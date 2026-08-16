@@ -20,6 +20,7 @@ import { PostFX } from './PostFX.js'
 import { WavesMask } from './hexmap/effects/WavesMask.js'
 import { setSeed } from './SeededRandom.js'
 import { LEVELS_COUNT } from './hexmap/HexTileData.js'
+import { getPlatform } from './platform/index.js'
 import gsap from 'gsap'
 
 // Global status update function
@@ -48,8 +49,11 @@ export function log(text, style = '') {
 export class App {
   static instance = null
 
-  constructor(canvas) {
+  constructor(canvas, platform = null) {
     this.canvas = canvas
+    this.platform = platform || getPlatform()
+    this.viewport = this.platform.viewport
+    this._unsubscribeViewport = null
     this.renderer = null
     this.orthoCamera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 1000)
     this.perspCamera = new PerspectiveCamera(30, 1, 1, 1000)
@@ -80,6 +84,8 @@ export class App {
       return
     }
 
+    await this.platform.init()
+
     const seed = Math.floor(Math.random() * 100000)
     setSeed(seed)
     console.log(`%c[SEED] ${seed}`, 'color: black')
@@ -87,12 +93,12 @@ export class App {
     this.renderer = new WebGPURenderer({ canvas: this.canvas, antialias: true })
     await this.renderer.init()
     // DPR 2 with half-res AO gives good quality/perf balance
-    this.renderer.setPixelRatio(2)
-    this.renderer.setSize(window.innerWidth, window.innerHeight)
+    this.renderer.setPixelRatio(this.viewport.getPixelRatio())
+    this.renderer.setSize(this.viewport.getWidth(), this.viewport.getHeight())
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = PCFShadowMap
 
-    window.addEventListener('resize', this.onResize.bind(this))
+    this._unsubscribeViewport = this.viewport.subscribe(this.onResize.bind(this))
 
     // Initialize params from defaults before creating modules
     this.params = JSON.parse(JSON.stringify(GUIManager.defaultParams))
@@ -110,7 +116,8 @@ export class App {
     this.pointerHandler = new Pointer(
       this.renderer,
       this.camera,
-      new Plane(new Vector3(0, 1, 0), 0)
+      new Plane(new Vector3(0, 1, 0), 0),
+      this.viewport
     )
 
     // Initialize modules
@@ -238,10 +245,7 @@ export class App {
         onHover: (intersection) => this.city.onHover(intersection),
         onPointerDown: (intersection, clientX, clientY, isTouch) => {
           // Convert client coords to normalized device coordinates
-          const pointer = new Vector2(
-            (clientX / window.innerWidth) * 2 - 1,
-            -(clientY / window.innerHeight) * 2 + 1
-          )
+          const pointer = this.pointerHandler.getNormalizedDeviceCoords(clientX, clientY, new Vector2())
           // Check placeholders
           if (this.city.onPointerDown(pointer, this.camera)) {
             return true  // Placeholder was clicked
@@ -251,10 +255,7 @@ export class App {
         onPointerUp: (isTouch, touchIntersection) => this.city.onPointerUp(isTouch, touchIntersection),
         onPointerMove: (clientX, clientY) => {
           // Convert client coords to normalized device coordinates
-          const pointer = new Vector2(
-            (clientX / window.innerWidth) * 2 - 1,
-            -(clientY / window.innerHeight) * 2 + 1
-          )
+          const pointer = this.pointerHandler.getNormalizedDeviceCoords(clientX, clientY, new Vector2())
           // Update placeholder hover state
           this.city.onPointerMove(pointer, this.camera)
         },
@@ -355,7 +356,7 @@ export class App {
 
   updateOrthoFrustum() {
     const frustumSize = 100
-    const aspect = window.innerWidth / window.innerHeight
+    const aspect = this.viewport?.getAspect() || ((typeof window !== 'undefined' ? window.innerWidth : 800) / (typeof window !== 'undefined' ? window.innerHeight : 600))
     this.orthoCamera.left = -frustumSize * aspect / 2
     this.orthoCamera.right = frustumSize * aspect / 2
     this.orthoCamera.top = frustumSize / 2
@@ -364,12 +365,12 @@ export class App {
   }
 
   updatePerspFrustum() {
-    this.perspCamera.aspect = window.innerWidth / window.innerHeight
+    this.perspCamera.aspect = this.viewport?.getAspect() || ((typeof window !== 'undefined' ? window.innerWidth : 800) / (typeof window !== 'undefined' ? window.innerHeight : 600))
     this.perspCamera.updateProjectionMatrix()
   }
 
   initPostProcessing() {
-    this.postFX = new PostFX(this.renderer, this.scene, this.camera)
+    this.postFX = new PostFX(this.renderer, this.scene, this.camera, this.viewport)
     this.postFX.fadeOpacity.value = 0 // Start black
     this.wavesMask = new WavesMask(this.renderer)
 
@@ -396,8 +397,10 @@ export class App {
   }
 
   initCSSRenderer() {
+    const width = this.viewport?.getWidth() || (typeof window !== 'undefined' ? window.innerWidth : 800)
+    const height = this.viewport?.getHeight() || (typeof window !== 'undefined' ? window.innerHeight : 600)
     this.cssRenderer = new CSS2DRenderer()
-    this.cssRenderer.setSize(window.innerWidth, window.innerHeight)
+    this.cssRenderer.setSize(width, height)
     this.cssRenderer.domElement.style.position = 'absolute'
     this.cssRenderer.domElement.style.top = '0'
     this.cssRenderer.domElement.style.left = '0'
@@ -439,8 +442,8 @@ export class App {
     container.id = 'ui-menu'
     container.style.cssText = `
       position: fixed;
-      bottom: 10px;
-      left: 10px;
+      bottom: calc(10px + var(--app-safe-bottom, 0px));
+      left: calc(10px + var(--app-safe-left, 0px));
       display: flex;
       flex-direction: row;
       gap: 9px;
@@ -546,24 +549,26 @@ export class App {
   }
 
   onResize(_e, toSize) {
-    const { renderer, cssRenderer, postFX } = this
-    const size = new Vector2(window.innerWidth, window.innerHeight)
-    if (toSize) size.copy(toSize)
+    const { renderer, cssRenderer, postFX, viewport } = this
+    const width = toSize?.width ?? toSize?.x ?? viewport?.getWidth() ?? (typeof window !== 'undefined' ? window.innerWidth : 800)
+    const height = toSize?.height ?? toSize?.y ?? viewport?.getHeight() ?? (typeof window !== 'undefined' ? window.innerHeight : 600)
 
     this.updateOrthoFrustum()
     this.updatePerspFrustum()
 
-    renderer.setSize(size.x, size.y)
-    renderer.domElement.style.width = `${size.x}px`
-    renderer.domElement.style.height = `${size.y}px`
-
-    if (cssRenderer) {
-      cssRenderer.setSize(size.x, size.y)
+    if (renderer) {
+      renderer.setSize(width, height)
+      renderer.domElement.style.width = `${width}px`
+      renderer.domElement.style.height = `${height}px`
     }
 
-    // Resize overlay render target
+    if (cssRenderer) {
+      cssRenderer.setSize(width, height)
+    }
+
+    // Resize overlay and postfx render targets
     if (postFX) {
-      postFX.resize()
+      postFX.resize(width, height)
     }
   }
 
