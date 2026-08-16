@@ -97,14 +97,11 @@ export class BrowserViewport {
   updateCssCustomProperties() {
     if (typeof document === 'undefined') return
     const root = document.documentElement
-    const sa = this.getSafeArea()
     const w = this.getWidth()
     const h = this.getHeight()
 
-    root.style.setProperty('--app-safe-top', `${sa.top}px`)
-    root.style.setProperty('--app-safe-right', `${sa.right}px`)
-    root.style.setProperty('--app-safe-bottom', `${sa.bottom}px`)
-    root.style.setProperty('--app-safe-left', `${sa.left}px`)
+    // We do not overwrite --app-safe-* with 0px so that CSS env(safe-area-inset-*, 0px)
+    // defined in index.html is preserved for mobile browsers (e.g. Safari on iOS).
     root.style.setProperty('--app-viewport-width', `${w}px`)
     root.style.setProperty('--app-viewport-height', `${h}px`)
   }

@@ -160,22 +160,27 @@ export class TelegramViewport {
   updateCssCustomProperties() {
     if (typeof document === 'undefined') return
     const root = document.documentElement
-    const sa = this.getSafeArea()
-    const csa = this.getContentSafeArea()
     const w = this.getWidth()
     const h = this.getHeight()
 
-    root.style.setProperty('--app-safe-top', `${sa.top}px`)
-    root.style.setProperty('--app-safe-right', `${sa.right}px`)
-    root.style.setProperty('--app-safe-bottom', `${sa.bottom}px`)
-    root.style.setProperty('--app-safe-left', `${sa.left}px`)
-
-    root.style.setProperty('--app-content-safe-top', `${csa.top}px`)
-    root.style.setProperty('--app-content-safe-right', `${csa.right}px`)
-    root.style.setProperty('--app-content-safe-bottom', `${csa.bottom}px`)
-    root.style.setProperty('--app-content-safe-left', `${csa.left}px`)
-
     root.style.setProperty('--app-viewport-width', `${w}px`)
     root.style.setProperty('--app-viewport-height', `${h}px`)
+
+    // Only override CSS env() custom properties if Telegram explicitly provides safeAreaInset
+    if (this.webApp?.safeAreaInset && typeof this.webApp.safeAreaInset === 'object') {
+      const sa = this.getSafeArea()
+      root.style.setProperty('--app-safe-top', `${sa.top}px`)
+      root.style.setProperty('--app-safe-right', `${sa.right}px`)
+      root.style.setProperty('--app-safe-bottom', `${sa.bottom}px`)
+      root.style.setProperty('--app-safe-left', `${sa.left}px`)
+    }
+
+    if (this.webApp?.contentSafeAreaInset && typeof this.webApp.contentSafeAreaInset === 'object') {
+      const csa = this.getContentSafeArea()
+      root.style.setProperty('--app-content-safe-top', `${csa.top}px`)
+      root.style.setProperty('--app-content-safe-right', `${csa.right}px`)
+      root.style.setProperty('--app-content-safe-bottom', `${csa.bottom}px`)
+      root.style.setProperty('--app-content-safe-left', `${csa.left}px`)
+    }
   }
 }

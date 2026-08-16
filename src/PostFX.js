@@ -55,7 +55,7 @@ export class PostFX {
     // Fade to black (0 = black, 1 = fully visible)
     this.fadeOpacity = uniform(1)
 
-    const dpr = Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2)
+    const dpr = this.viewport?.getPixelRatio() ?? Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2)
     const baseW = this.viewport?.getWidth() || (typeof window !== 'undefined' ? window.innerWidth : 800)
     const baseH = this.viewport?.getHeight() || (typeof window !== 'undefined' ? window.innerHeight : 600)
     const w = baseW * dpr
@@ -215,7 +215,7 @@ export class PostFX {
    * Resize render targets
    */
   resize(width, height) {
-    const dpr = Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2)
+    const dpr = this.viewport?.getPixelRatio() ?? Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2)
     const baseW = width || this.viewport?.getWidth() || (typeof window !== 'undefined' ? window.innerWidth : 800)
     const baseH = height || this.viewport?.getHeight() || (typeof window !== 'undefined' ? window.innerHeight : 600)
     const w = baseW * dpr

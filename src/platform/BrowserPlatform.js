@@ -11,12 +11,15 @@ export class BrowserPlatform {
     this.viewport = new BrowserViewport()
     this._lifecycleListeners = new Map() // eventName -> Set<callback>
     this._onVisibilityChange = this._onVisibilityChange.bind(this)
+    this._onDomFullscreenChange = this._onDomFullscreenChange.bind(this)
   }
 
   async init() {
     this.viewport.init()
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', this._onVisibilityChange)
+      document.addEventListener('fullscreenchange', this._onDomFullscreenChange)
+      document.addEventListener('webkitfullscreenchange', this._onDomFullscreenChange)
     }
     return true
   }
@@ -25,8 +28,21 @@ export class BrowserPlatform {
     this.viewport.destroy()
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this._onVisibilityChange)
+      document.removeEventListener('fullscreenchange', this._onDomFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', this._onDomFullscreenChange)
     }
     this._lifecycleListeners.clear()
+  }
+
+  // ==========================================
+  // Fullscreen Management
+  // ==========================================
+
+  get isFullscreen() {
+    if (typeof document !== 'undefined') {
+      return Boolean(document.fullscreenElement || document.webkitFullscreenElement)
+    }
+    return false
   }
 
   async requestFullscreen() {
@@ -62,6 +78,18 @@ export class BrowserPlatform {
     return false
   }
 
+  onFullscreenChange(callback) {
+    return this.onLifecycleEvent('fullscreenChanged', callback)
+  }
+
+  onFullscreenFailed(callback) {
+    return this.onLifecycleEvent('fullscreenFailed', callback)
+  }
+
+  // ==========================================
+  // Orientation Management
+  // ==========================================
+
   async lockOrientation(orientation = 'landscape') {
     if (typeof screen !== 'undefined' && screen.orientation?.lock) {
       try {
@@ -75,15 +103,64 @@ export class BrowserPlatform {
     return false
   }
 
+  lockCurrentOrientation() {
+    if (typeof screen !== 'undefined' && screen.orientation?.lock && screen.orientation?.type) {
+      try {
+        screen.orientation.lock(screen.orientation.type)
+        return true
+      } catch {
+        return false
+      }
+    }
+    return false
+  }
+
   unlockOrientation() {
     if (typeof screen !== 'undefined' && screen.orientation?.unlock) {
       try {
         screen.orientation.unlock()
+        return true
       } catch {
-        // Ignored
+        return false
       }
     }
+    return false
   }
+
+  // ==========================================
+  // Closing Confirmation No-ops for Browser
+  // ==========================================
+
+  enableClosingConfirmation() {
+    return false
+  }
+
+  disableClosingConfirmation() {
+    return false
+  }
+
+  // ==========================================
+  // User & Theme Info
+  // ==========================================
+
+  getUser() {
+    return null
+  }
+
+  getThemeParams() {
+    return {}
+  }
+
+  getColorScheme() {
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    }
+    return 'dark'
+  }
+
+  // ==========================================
+  // Event Subscriptions & Lifecycle Dispatch
+  // ==========================================
 
   onVisibilityChange(callback) {
     return this.onLifecycleEvent('visibilitychange', callback)
@@ -110,6 +187,10 @@ export class BrowserPlatform {
         }
       }
     }
+  }
+
+  _onDomFullscreenChange() {
+    this._emitLifecycleEvent('fullscreenChanged', { isFullscreen: this.isFullscreen })
   }
 
   _onVisibilityChange() {

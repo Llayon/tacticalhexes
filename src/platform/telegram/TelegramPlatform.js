@@ -5,7 +5,7 @@
 import { TelegramViewport } from './TelegramViewport.js'
 
 export class TelegramPlatform {
-  constructor(webApp = window.Telegram?.WebApp) {
+  constructor(webApp = (typeof window !== 'undefined' ? window.Telegram?.WebApp : null)) {
     this.name = 'telegram'
     this.isTelegram = true
     this.webApp = webApp
@@ -16,6 +16,9 @@ export class TelegramPlatform {
     this._onDeactivated = this._onDeactivated.bind(this)
     this._onThemeChanged = this._onThemeChanged.bind(this)
     this._onVisibilityChange = this._onVisibilityChange.bind(this)
+    this._onFullscreenChanged = this._onFullscreenChanged.bind(this)
+    this._onFullscreenFailed = this._onFullscreenFailed.bind(this)
+    this._onDomFullscreenChange = this._onDomFullscreenChange.bind(this)
   }
 
   async init() {
@@ -33,11 +36,6 @@ export class TelegramPlatform {
           this.webApp.expand()
         }
 
-        // Enable closing confirmation to prevent accidental swipe-down exits during sessions
-        if (typeof this.webApp.enableClosingConfirmation === 'function') {
-          this.webApp.enableClosingConfirmation()
-        }
-
         // Set background / header colors if supported
         if (typeof this.webApp.setBackgroundColor === 'function') {
           this.webApp.setBackgroundColor('#000000')
@@ -46,11 +44,13 @@ export class TelegramPlatform {
           this.webApp.setHeaderColor('#000000')
         }
 
-        // Bind Telegram lifecycle events
+        // Bind Telegram lifecycle & fullscreen events
         if (typeof this.webApp.onEvent === 'function') {
           this.webApp.onEvent('activated', this._onActivated)
           this.webApp.onEvent('deactivated', this._onDeactivated)
           this.webApp.onEvent('themeChanged', this._onThemeChanged)
+          this.webApp.onEvent('fullscreenChanged', this._onFullscreenChanged)
+          this.webApp.onEvent('fullscreenFailed', this._onFullscreenFailed)
         }
       } catch (err) {
         console.warn('[TelegramPlatform] Initialization warning:', err?.message || err)
@@ -59,6 +59,8 @@ export class TelegramPlatform {
 
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', this._onVisibilityChange)
+      document.addEventListener('fullscreenchange', this._onDomFullscreenChange)
+      document.addEventListener('webkitfullscreenchange', this._onDomFullscreenChange)
     }
 
     return true
@@ -71,18 +73,37 @@ export class TelegramPlatform {
       this.webApp.offEvent('activated', this._onActivated)
       this.webApp.offEvent('deactivated', this._onDeactivated)
       this.webApp.offEvent('themeChanged', this._onThemeChanged)
+      this.webApp.offEvent('fullscreenChanged', this._onFullscreenChanged)
+      this.webApp.offEvent('fullscreenFailed', this._onFullscreenFailed)
     }
 
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this._onVisibilityChange)
+      document.removeEventListener('fullscreenchange', this._onDomFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', this._onDomFullscreenChange)
     }
 
     this._lifecycleListeners.clear()
   }
 
+  // ==========================================
+  // Fullscreen Management
+  // ==========================================
+
+  get isFullscreen() {
+    if (this.webApp && typeof this.webApp.isFullscreen === 'boolean') {
+      return this.webApp.isFullscreen
+    }
+    if (typeof document !== 'undefined') {
+      return Boolean(document.fullscreenElement || document.webkitFullscreenElement)
+    }
+    return false
+  }
+
   /**
    * Request fullscreen mode (Telegram Bot API 8.0+ / WebApp v8.0+)
    * Falls back to standard browser fullscreen if available.
+   * Fullscreen results are asynchronous and confirmed via fullscreenChanged / fullscreenFailed events.
    */
   async requestFullscreen() {
     if (this.webApp && typeof this.webApp.requestFullscreen === 'function') {
@@ -94,7 +115,7 @@ export class TelegramPlatform {
       }
     }
 
-    // Fallback to standard fullscreen
+    // Fallback to standard DOM fullscreen
     if (typeof document !== 'undefined') {
       try {
         const el = document.documentElement
@@ -105,8 +126,8 @@ export class TelegramPlatform {
           await el.webkitRequestFullscreen()
           return true
         }
-      } catch {
-        // Ignored
+      } catch (err) {
+        console.warn('[TelegramPlatform] DOM requestFullscreen non-fatal error:', err?.message || err)
       }
     }
     return false
@@ -134,36 +155,40 @@ export class TelegramPlatform {
           await document.webkitExitFullscreen()
           return true
         }
-      } catch {
-        // Ignored
+      } catch (err) {
+        console.warn('[TelegramPlatform] DOM exitFullscreen error:', err?.message || err)
       }
     }
     return false
   }
 
+  onFullscreenChange(callback) {
+    return this.onLifecycleEvent('fullscreenChanged', callback)
+  }
+
+  onFullscreenFailed(callback) {
+    return this.onLifecycleEvent('fullscreenFailed', callback)
+  }
+
+  // ==========================================
+  // Orientation Management
+  // ==========================================
+
   /**
-   * Lock screen orientation if supported (Telegram Bot API 8.0+ or Screen Orientation API)
-   * @param {'landscape'|'portrait'} orientation
+   * Lock orientation to the CURRENT screen orientation in Telegram Mini Apps (Bot API 8.0+).
+   * Note: Telegram.WebApp.lockOrientation() locks to the current device orientation;
+   * it does not support targeting a specific orientation name like 'landscape'.
    */
-  async lockOrientation(orientation = 'landscape') {
+  lockCurrentOrientation() {
     if (this.webApp && typeof this.webApp.lockOrientation === 'function') {
       try {
         this.webApp.lockOrientation()
         return true
       } catch (err) {
         console.warn('[TelegramPlatform] Telegram lockOrientation non-fatal error:', err?.message || err)
-      }
-    }
-
-    if (typeof screen !== 'undefined' && screen.orientation?.lock) {
-      try {
-        await screen.orientation.lock(orientation)
-        return true
-      } catch {
         return false
       }
     }
-
     return false
   }
 
@@ -174,23 +199,79 @@ export class TelegramPlatform {
     if (this.webApp && typeof this.webApp.unlockOrientation === 'function') {
       try {
         this.webApp.unlockOrientation()
+        return true
       } catch {
-        // Ignored
+        return false
       }
     }
 
     if (typeof screen !== 'undefined' && screen.orientation?.unlock) {
       try {
         screen.orientation.unlock()
+        return true
       } catch {
-        // Ignored
+        return false
       }
     }
+    return false
   }
 
   /**
-   * Get Telegram user/theme data (safe access)
+   * Browser Screen Orientation API fallback for requesting a specific orientation
+   * @param {'landscape'|'portrait'} orientation
    */
+  async lockOrientation(orientation = 'landscape') {
+    if (typeof screen !== 'undefined' && screen.orientation?.lock) {
+      try {
+        await screen.orientation.lock(orientation)
+        return true
+      } catch {
+        // Expected if device/browser doesn't support orientation locking
+      }
+    }
+
+    // Fallback: lock to current orientation in Telegram
+    return this.lockCurrentOrientation()
+  }
+
+  // ==========================================
+  // Closing Confirmation Management
+  // ==========================================
+
+  /**
+   * Enable closing confirmation dialog to prevent accidental exit during active gameplay.
+   */
+  enableClosingConfirmation() {
+    if (this.webApp && typeof this.webApp.enableClosingConfirmation === 'function') {
+      try {
+        this.webApp.enableClosingConfirmation()
+        return true
+      } catch (err) {
+        console.warn('[TelegramPlatform] enableClosingConfirmation error:', err)
+      }
+    }
+    return false
+  }
+
+  /**
+   * Disable closing confirmation dialog.
+   */
+  disableClosingConfirmation() {
+    if (this.webApp && typeof this.webApp.disableClosingConfirmation === 'function') {
+      try {
+        this.webApp.disableClosingConfirmation()
+        return true
+      } catch (err) {
+        console.warn('[TelegramPlatform] disableClosingConfirmation error:', err)
+      }
+    }
+    return false
+  }
+
+  // ==========================================
+  // User & Theme Info
+  // ==========================================
+
   getUser() {
     return this.webApp?.initDataUnsafe?.user || null
   }
@@ -202,6 +283,10 @@ export class TelegramPlatform {
   getColorScheme() {
     return this.webApp?.colorScheme || 'dark'
   }
+
+  // ==========================================
+  // Event Subscriptions & Lifecycle Dispatch
+  // ==========================================
 
   onVisibilityChange(callback) {
     return this.onLifecycleEvent('visibilitychange', callback)
@@ -245,6 +330,20 @@ export class TelegramPlatform {
       colorScheme: this.getColorScheme(),
       themeParams: this.getThemeParams(),
     })
+  }
+
+  _onFullscreenChanged() {
+    this._emitLifecycleEvent('fullscreenChanged', { isFullscreen: this.isFullscreen })
+  }
+
+  _onFullscreenFailed(eventData) {
+    this._emitLifecycleEvent('fullscreenFailed', {
+      error: eventData?.error || 'FULLSCREEN_REQUEST_FAILED',
+    })
+  }
+
+  _onDomFullscreenChange() {
+    this._emitLifecycleEvent('fullscreenChanged', { isFullscreen: this.isFullscreen })
   }
 
   _onVisibilityChange() {
