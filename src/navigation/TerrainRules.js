@@ -87,20 +87,15 @@ export function canTraverse(fromCell, toCell) {
     return false // Sheer cliff / vertical elevation mismatch
   }
 
-  // 2. Cliff tile handling: cliff tiles represent sheer vertical drops on their lower edges
-  // Walking across the lower edge of a cliff tile is blocked by the cliff face
-  if (fromCell.isCliff) {
-    const highLevel = fromCell.level + (fromCell.tileDef?.levelIncrement ?? 1)
-    if (edgeLevelFrom < highLevel) {
-      return false // Low edge of cliff is a sheer drop
-    }
+  // 2. Cliff tile handling: cliff tiles represent vertical blocked boundaries on their high edges.
+  // A cliff-facing high edge represents a sheer vertical cliff face and is NOT traversable.
+  // A low edge at the cliff tile's actual base level may connect to compatible same-level terrain.
+  if (fromCell.isCliff && edgeLevelFrom > fromCell.level) {
+    return false // High edge of cliff is a sheer vertical wall
   }
 
-  if (toCell.isCliff) {
-    const highLevel = toCell.level + (toCell.tileDef?.levelIncrement ?? 1)
-    if (edgeLevelTo < highLevel) {
-      return false // Low edge of cliff is a sheer drop
-    }
+  if (toCell.isCliff && edgeLevelTo > toCell.level) {
+    return false // High edge of cliff is a sheer vertical wall
   }
 
   return true

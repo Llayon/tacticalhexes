@@ -3,7 +3,7 @@
  * Pure gameplay/simulation domain — no Three.js or rendering dependencies.
  */
 
-import { CUBE_DIRS, cubeKey } from '../hexmap/HexWFCCore.js'
+import { CUBE_DIRS } from '../hexmap/HexWFCCore.js'
 import { isCellWalkable, canTraverse, getMovementCost, TerrainCost } from './TerrainRules.js'
 
 export class NavigationGrid {
@@ -15,6 +15,18 @@ export class NavigationGrid {
       throw new Error('[NavigationGrid] islandData is required')
     }
     this.islandData = islandData
+  }
+
+  /**
+   * Check if a specific HexCell instance belongs to this NavigationGrid's IslandData
+   * @param {import('../world/IslandData.js').HexCell} cell
+   * @returns {boolean}
+   */
+  containsCell(cell) {
+    if (!cell || typeof cell !== 'object') return false
+    const key = cell.key
+    if (!key) return false
+    return this.islandData.cells.get(key) === cell
   }
 
   /**

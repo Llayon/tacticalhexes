@@ -135,6 +135,9 @@ export class Pathfinder {
    */
   findPath(startCell, goalCell, options = {}) {
     if (!startCell || !goalCell) return null
+    if (!this.navGrid.containsCell(startCell) || !this.navGrid.containsCell(goalCell)) {
+      return null
+    }
     if (!this.navGrid.isWalkable(startCell) || !this.navGrid.isWalkable(goalCell)) return null
 
     // Trivial case: start is already goal

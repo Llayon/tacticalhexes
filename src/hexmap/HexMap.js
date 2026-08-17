@@ -132,6 +132,8 @@ export class HexMap {
     log(`[HexMap] Generating Island (seed: ${seed}, radius: ${this.hexGridRadius})...`, 'color: #4a9eff')
 
     this.isRegenerating = true
+    this.currentIsland = null
+    this.navGrid = null
     this.onBeforeTilesChanged?.()
 
     this.globalCells.clear()
@@ -163,6 +165,8 @@ export class HexMap {
     } catch (e) {
       console.error('[HexMap] Island generation failed, falling back:', e)
       Sounds.play('incorrect')
+      this.currentIsland = null
+      this.navGrid = null
       this.isRegenerating = false
       return null
     }

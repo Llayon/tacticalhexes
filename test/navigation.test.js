@@ -133,6 +133,64 @@ describe('TerrainRules & Elevation Traversability', () => {
     assert.equal(getMovementCost(lowGrass, highGrass), Infinity)
   })
 
+  it('correctly handles GRASS_CLIFF_LOW semantics (low edge traversable, high edge cliff face blocked)', () => {
+    // GRASS_CLIFF_LOW at (0,0,0) at level 0, rotation 0
+    // highEdges: ['NE', 'E', 'SE'] with levelIncrement: 1
+    // lowEdges: ['SW', 'W', 'NW'] at level 0
+    const cliffLow = new HexCell({ q: 0, r: 0, s: 0, type: TileType.GRASS_CLIFF_LOW, rotation: 0, level: 0 })
+
+    // Compatible low-side level 0 land at West (-1, 0, 1) and SW (0, -1, 1)
+    const lowLandWest = new HexCell({ q: -1, r: 0, s: 1, type: TileType.GRASS, level: 0 })
+    const lowLandSW = new HexCell({ q: 0, r: -1, s: 1, type: TileType.GRASS, level: 0 })
+
+    // Elevated level 1 land facing the cliff's high edge at East (1, 0, -1) and NE (1, -1, 0)
+    const highLandEast = new HexCell({ q: 1, r: 0, s: -1, type: TileType.GRASS, level: 1 })
+    const highLandNE = new HexCell({ q: 1, r: -1, s: 0, type: TileType.GRASS, level: 1 })
+
+    // Low-side transition: continuous base surface at level 0 -> allowed in both directions
+    assert.equal(canTraverse(cliffLow, lowLandWest), true)
+    assert.equal(canTraverse(lowLandWest, cliffLow), true)
+    assert.equal(getMovementCost(cliffLow, lowLandWest), TerrainCost.NORMAL)
+    assert.equal(canTraverse(cliffLow, lowLandSW), true)
+    assert.equal(canTraverse(lowLandSW, cliffLow), true)
+
+    // High-side transition: vertical cliff face -> blocked in both directions
+    assert.equal(canTraverse(cliffLow, highLandEast), false)
+    assert.equal(canTraverse(highLandEast, cliffLow), false)
+    assert.equal(getMovementCost(cliffLow, highLandEast), Infinity)
+    assert.equal(canTraverse(cliffLow, highLandNE), false)
+    assert.equal(canTraverse(highLandNE, cliffLow), false)
+    assert.equal(getMovementCost(cliffLow, highLandNE), Infinity)
+  })
+
+  it('correctly handles GRASS_CLIFF (levelIncrement: 2) and GRASS_CLIFF_LOW_C semantics', () => {
+    // GRASS_CLIFF at level 0, rotation 0 (highEdges NE, E, SE with levelIncrement: 2)
+    const cliff2 = new HexCell({ q: 0, r: 0, s: 0, type: TileType.GRASS_CLIFF, rotation: 0, level: 0 })
+    const lowLandWest = new HexCell({ q: -1, r: 0, s: 1, type: TileType.GRASS, level: 0 })
+    const highLandEast2 = new HexCell({ q: 1, r: 0, s: -1, type: TileType.GRASS, level: 2 })
+
+    // Low-side allowed
+    assert.equal(canTraverse(cliff2, lowLandWest), true)
+    assert.equal(canTraverse(lowLandWest, cliff2), true)
+
+    // High-side (level 2 cliff drop) blocked both ways
+    assert.equal(canTraverse(cliff2, highLandEast2), false)
+    assert.equal(canTraverse(highLandEast2, cliff2), false)
+
+    // GRASS_CLIFF_LOW_C (single highEdge 'E', levelIncrement: 1)
+    const cliffC = new HexCell({ q: 0, r: 0, s: 0, type: TileType.GRASS_CLIFF_LOW_C, rotation: 0, level: 0 })
+    const highLandEast = new HexCell({ q: 1, r: 0, s: -1, type: TileType.GRASS, level: 1 })
+    const lowLandNE = new HexCell({ q: 1, r: -1, s: 0, type: TileType.GRASS, level: 0 })
+
+    // East (high edge) blocked
+    assert.equal(canTraverse(cliffC, highLandEast), false)
+    assert.equal(canTraverse(highLandEast, cliffC), false)
+
+    // NE (low edge on cliffC) allowed to level 0 grass
+    assert.equal(canTraverse(cliffC, lowLandNE), true)
+    assert.equal(canTraverse(lowLandNE, cliffC), true)
+  })
+
   it('allows traversal across correctly oriented slopes', () => {
     // slope at (0,0,0) at level 0, rotation 0 -> high edges NE, E, SE are level 1
     const slope = new HexCell({ q: 0, r: 0, s: 0, type: TileType.GRASS_SLOPE_LOW, rotation: 0, level: 0 })
@@ -210,9 +268,57 @@ describe('NavigationGrid', () => {
     assert.ok(reachable.has(c2.key))
     assert.equal(reachable.has(cWater.key), false)
   })
+
+  it('correctly reports cell membership via containsCell', () => {
+    const islandA = new IslandData({ seed: 1, radius: 2 })
+    const islandB = new IslandData({ seed: 2, radius: 2 })
+
+    const cellA = islandA.addCell(new HexCell({ q: 0, r: 0, s: 0, type: TileType.GRASS, level: 0 }))
+    const cellB = islandB.addCell(new HexCell({ q: 0, r: 0, s: 0, type: TileType.GRASS, level: 0 })) // Same coords, different instance
+
+    const navA = new NavigationGrid(islandA)
+    const navB = new NavigationGrid(islandB)
+
+    assert.equal(navA.containsCell(cellA), true)
+    assert.equal(navA.containsCell(cellB), false) // Same q,r,s but foreign object -> rejected
+    assert.equal(navB.containsCell(cellB), true)
+    assert.equal(navB.containsCell(cellA), false)
+
+    assert.equal(navA.containsCell(null), false)
+    assert.equal(navA.containsCell(undefined), false)
+    assert.equal(navA.containsCell({ q: 0, r: 0, s: 0 }), false)
+  })
 })
 
 describe('Pathfinder (Deterministic Hex A*)', () => {
+  it('rejects stale or foreign HexCell instances cleanly without throwing', () => {
+    const island1 = new IslandData({ seed: 111, radius: 2 })
+    const island2 = new IslandData({ seed: 222, radius: 2 })
+
+    const c1Start = island1.addCell(new HexCell({ q: 0, r: 0, s: 0, type: TileType.GRASS, level: 0 }))
+    const c1Goal = island1.addCell(new HexCell({ q: 1, r: -1, s: 0, type: TileType.GRASS, level: 0 }))
+
+    // Foreign cells from a different island generation with same coordinates
+    const c2Start = island2.addCell(new HexCell({ q: 0, r: 0, s: 0, type: TileType.GRASS, level: 0 }))
+    const c2Goal = island2.addCell(new HexCell({ q: 1, r: -1, s: 0, type: TileType.GRASS, level: 0 }))
+
+    const nav1 = new NavigationGrid(island1)
+    const pf1 = new Pathfinder(nav1)
+
+    // Valid within island1
+    const validPath = pf1.findPath(c1Start, c1Goal)
+    assert.ok(validPath !== null)
+    assert.equal(validPath.length, 2)
+
+    // Foreign start cell -> null
+    assert.equal(pf1.findPath(c2Start, c1Goal), null)
+
+    // Foreign goal cell -> null
+    assert.equal(pf1.findPath(c1Start, c2Goal), null)
+
+    // Both foreign -> null
+    assert.equal(pf1.findPath(c2Start, c2Goal), null)
+  })
   it('handles start == goal and invalid/unreachable queries cleanly', () => {
     const island = new IslandData({ seed: 789, radius: 2 })
     const c0 = island.addCell(new HexCell({ q: 0, r: 0, s: 0, type: TileType.GRASS, level: 0 }))

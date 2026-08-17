@@ -1,5 +1,5 @@
 import { GLTFLoader } from 'three/examples/jsm/Addons.js'
-import { Color } from 'three/webgpu'
+import { Color, MeshStandardMaterial } from 'three/webgpu'
 import {
   TILE_LIST,
   TileType,
@@ -9,6 +9,7 @@ import {
   rotateHexEdges,
   LEVELS_COUNT,
 } from './HexTileData.js'
+import { createFallbackTileScene } from './ProceduralTileGeometry.js'
 
 /**
  * Edge terrain types
@@ -143,54 +144,95 @@ export class HexTileGeometry {
   static HEX_WIDTH = 2   // Will be updated from mesh bounds
   static HEX_HEIGHT = 2  // Will be updated from mesh bounds
 
-  static async init(glbPath = './assets/models/hex-roads.glb') {
-    const loader = new GLTFLoader()
+  static async init(glbPath = './assets/models/hex-terrain.glb') {
+    let success = false
     try {
+      const loader = new GLTFLoader()
       const gltf = await loader.loadAsync(glbPath)
-      this.gltfScene = gltf.scene
+      if (gltf && gltf.scene) {
+        this.gltfScene = gltf.scene
 
-      // Extract material from first mesh
-      gltf.scene.traverse((child) => {
-        if (child.isMesh && child.material && !this.material) {
-          this.material = child.material
+        // Extract material from first mesh
+        gltf.scene.traverse((child) => {
+          if (child.isMesh && child.material && !this.material) {
+            this.material = child.material
+          }
+        })
+
+        // Load geometries for all active tile types
+        for (let type = 0; type < TILE_LIST.length; type++) {
+          const tile = TILE_LIST[type]
+          const result = this.findAndProcessGeometry(gltf.scene, tile.mesh)
+          if (result.geom) {
+            this.geoms.set(type, result.geom)
+          }
         }
-      })
 
-      // Load geometries for all active tile types
-      for (let type = 0; type < TILE_LIST.length; type++) {
-        const tile = TILE_LIST[type]
-        const result = this.findAndProcessGeometry(gltf.scene, tile.mesh)
-        if (result.geom) {
-          this.geoms.set(type, result.geom)
+        // Load grass bottom fill geometry (not a tile type, stored separately)
+        const bottomResult = this.findAndProcessGeometry(gltf.scene, 'hex_grass_bottom')
+        if (bottomResult.geom) {
+          bottomResult.geom.computeBoundingBox()
+          const topY = bottomResult.geom.boundingBox.max.y
+          bottomResult.geom.translate(0, -topY, 0)
+          bottomResult.geom.computeBoundingBox()
+          bottomResult.geom.computeBoundingSphere()
+          this.bottomGeom = bottomResult.geom
+        }
+
+        if (this.geoms.size > 0) {
+          success = true
         }
       }
-
-      // Load grass bottom fill geometry (not a tile type, stored separately)
-      // Processed so top is at Y=0 (extends downward) for placement at tile base
-      const bottomResult = this.findAndProcessGeometry(gltf.scene, 'hex_grass_bottom')
-      if (bottomResult.geom) {
-        bottomResult.geom.computeBoundingBox()
-        const topY = bottomResult.geom.boundingBox.max.y
-        bottomResult.geom.translate(0, -topY, 0)
-        bottomResult.geom.computeBoundingBox()
-        bottomResult.geom.computeBoundingSphere()
-        this.bottomGeom = bottomResult.geom
-      }
-
-      // Calculate hex dimensions from grass tile
-      const grassGeom = this.geoms.get(TileType.GRASS)
-      if (grassGeom) {
-        grassGeom.computeBoundingBox()
-        const bb = grassGeom.boundingBox
-        this.HEX_WIDTH = bb.max.x - bb.min.x
-        this.HEX_HEIGHT = bb.max.z - bb.min.z
-      }
-
-      console.log(`[GLB] Cached ${this.geoms.size} tile geometries`)
-      this.loaded = true
     } catch (e) {
-      console.warn('HexTileGeometry: Failed to load', glbPath, e)
-      this.loaded = false
+      console.warn('HexTileGeometry: GLB load failed, engaging procedural geometry fallback:', glbPath)
+    }
+
+    if (!success) {
+      this.initProceduralFallback()
+    }
+
+    // Calculate hex dimensions from grass tile
+    const grassGeom = this.geoms.get(TileType.GRASS)
+    if (grassGeom) {
+      grassGeom.computeBoundingBox()
+      const bb = grassGeom.boundingBox
+      this.HEX_WIDTH = bb.max.x - bb.min.x
+      this.HEX_HEIGHT = bb.max.z - bb.min.z
+    }
+
+    console.log(`[HexTileGeometry] Initialized with ${this.geoms.size} tile geometries (fallback: ${!success})`)
+    this.loaded = true
+  }
+
+  /**
+   * Procedural fallback generator when external GLB asset is unavailable or corrupt
+   */
+  static initProceduralFallback() {
+    this.gltfScene = createFallbackTileScene()
+    this.material = new MeshStandardMaterial({ roughness: 0.9, metalness: 0.1 })
+
+    for (let type = 0; type < TILE_LIST.length; type++) {
+      const tile = TILE_LIST[type]
+      const result = this.findAndProcessGeometry(this.gltfScene, tile.mesh)
+      if (result.geom) {
+        this.geoms.set(type, result.geom)
+      } else {
+        // Fallback to basic grass geometry if specific variant missing
+        const grassResult = this.findAndProcessGeometry(this.gltfScene, 'hex_grass')
+        if (grassResult.geom) {
+          this.geoms.set(type, grassResult.geom)
+        }
+      }
+    }
+
+    const bottomResult = this.findAndProcessGeometry(this.gltfScene, 'hex_grass_bottom')
+    if (bottomResult.geom) {
+      bottomResult.geom.computeBoundingBox()
+      const topY = bottomResult.geom.boundingBox.max.y
+      bottomResult.geom.translate(0, -topY, 0)
+      bottomResult.geom.computeBoundingBox()
+      bottomResult.geom.computeBoundingSphere()
+      this.bottomGeom = bottomResult.geom
     }
   }
 
