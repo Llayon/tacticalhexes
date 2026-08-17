@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 3000",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 3000"
+    "preview": "vite preview --host 0.0.0.0 --port 3000",
+    "test": "node test/navigation.test.js",
+    "test:nav": "node test/navigation.test.js"
   },
   "dependencies": {
     "gsap": "^3.14.2",

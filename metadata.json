@@ -1,4 +1,4 @@
 {
-  "name": "Hex Map WFC",
-  "description": "Procedural medieval hex island generator built with Wave Function Collapse (WFC) and Three.js."
+  "name": "Tactical Hexes",
+  "description": "Tactical procedural hex island game with WFC generation, deterministic navigation, and mobile-first controls."
 }

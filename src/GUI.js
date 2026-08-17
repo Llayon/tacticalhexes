@@ -228,20 +228,26 @@ export class GUIManager {
       }
     }, 'copyState').name('Copy GUI State')
     gui.add({
-      logControls: () => {
-        const c = app.cameraController
-        const cam = app.camera
-        console.log('Tactical Camera State:')
-        console.log('  camera.position:', cam.position.x.toFixed(3), cam.position.y.toFixed(3), cam.position.z.toFixed(3))
-        if (c) {
-          console.log('  target:', c.target.x.toFixed(3), c.target.y.toFixed(3), c.target.z.toFixed(3))
-          console.log('  currentTarget:', c.currentTarget.x.toFixed(3), c.currentTarget.y.toFixed(3), c.currentTarget.z.toFixed(3))
-          console.log('  distance:', c.currentDistance.toFixed(3))
-          console.log('  pitch:', (c.pitch * 180 / Math.PI).toFixed(1) + '°')
-          console.log('  yaw:', (c.yaw * 180 / Math.PI).toFixed(1) + '°')
+      logNavState: () => {
+        const nav = app.city?.navGrid
+        const island = app.city?.currentIsland
+        console.log('--- Navigation Grid State ---')
+        console.log('  Total Cells:', island?.getCellCount?.() ?? 0)
+        if (nav) {
+          const walkable = nav.getWalkableCells()
+          console.log('  Walkable Cells:', walkable.length)
+          if (walkable.length >= 2) {
+            import('./navigation/Pathfinder.js').then(({ Pathfinder }) => {
+              const pf = new Pathfinder(nav)
+              const start = walkable[0]
+              const goal = walkable[walkable.length - 1]
+              const path = pf.findPath(start, goal)
+              console.log(`  Sample Path from (${start.q},${start.r},${start.s}) to (${goal.q},${goal.r},${goal.s}):`, path ? `${path.length} steps` : 'Unreachable')
+            })
+          }
         }
       }
-    }, 'logControls').name('Log Tactical Camera')
+    }, 'logNavState').name('Log Nav Grid')
 
     // Decoration folder
     const decorationFolder = gui.addFolder('Decoration').close()

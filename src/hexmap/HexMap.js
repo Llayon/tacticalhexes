@@ -21,6 +21,7 @@ import { Water } from './effects/Water.js'
 import { random, setSeed } from '../SeededRandom.js'
 import { Sounds } from '../lib/Sounds.js'
 import { IslandGenerator } from '../world/IslandGenerator.js'
+import { NavigationGrid } from '../navigation/NavigationGrid.js'
 
 const LEVEL_HEIGHT = 0.5
 const TILE_SURFACE = 1
@@ -158,6 +159,7 @@ export class HexMap {
         tileTypes: this.getDefaultTileTypes(),
       })
       this.currentIsland = islandData
+      this.navGrid = new NavigationGrid(islandData)
     } catch (e) {
       console.error('[HexMap] Island generation failed, falling back:', e)
       Sounds.play('incorrect')

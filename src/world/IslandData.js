@@ -3,7 +3,7 @@
  * Completely decoupled from Three.js scene graphs and rendering instances.
  */
 
-import { cubeKey, parseCubeKey, cubeToOffset } from '../hexmap/HexWFCCore.js'
+import { cubeKey, parseCubeKey, cubeToOffset, getEdgeLevel } from '../hexmap/HexWFCCore.js'
 import { TILE_LIST } from '../hexmap/HexTileData.js'
 
 export class HexCell {
@@ -45,13 +45,26 @@ export class HexCell {
     return this.name.startsWith('ROAD_')
   }
 
+  get isCliff() {
+    return this.name.includes('CLIFF')
+  }
+
   get isSlope() {
-    return this.tileDef?.highEdges && this.tileDef.highEdges.length > 0
+    return !this.isCliff && (this.name.includes('SLOPE') || !!(this.tileDef?.highEdges && this.tileDef.highEdges.length > 0))
   }
 
   get isWalkable() {
-    // Basic walkability predicate: not pure deep water
+    // Basic walkability predicate: pure water is not walkable for land units
     return !this.isWater
+  }
+
+  /**
+   * Get the elevation level of an edge in a given direction
+   * @param {string} dir One of 'NE', 'E', 'SE', 'SW', 'W', 'NW'
+   * @returns {number}
+   */
+  getEdgeLevel(dir) {
+    return getEdgeLevel(this.type, this.rotation, dir, this.level)
   }
 }
 
