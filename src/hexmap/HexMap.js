@@ -134,6 +134,7 @@ export class HexMap {
     this.isRegenerating = true
     this.currentIsland = null
     this.navGrid = null
+    this.onBeforeIslandGenerated?.()
     this.onBeforeTilesChanged?.()
 
     this.globalCells.clear()
@@ -210,9 +211,10 @@ export class HexMap {
 
     this.isRegenerating = false
 
-    // Notify listeners for water mask and wave rebuilding
+    // Notify listeners for water mask, wave rebuilding, and gameplay controllers
     const animPromise = grid.animationDone || Promise.resolve()
     this.onTilesChanged?.(animPromise)
+    this.onIslandGenerated?.(islandData, this.navGrid, animPromise)
 
     log(`[HexMap] Island generated: ${islandData.getCellCount()} cells`, 'color: #2ed573')
     return islandData

@@ -23,6 +23,7 @@ import { LEVELS_COUNT } from './hexmap/HexTileData.js'
 import { getPlatform } from './platform/index.js'
 import { GraphicsProfileManager } from './render/GraphicsProfile.js'
 import { TacticalCameraController } from './render/TacticalCameraController.js'
+import { PlayerSquadController } from './gameplay/PlayerSquadController.js'
 import gsap from 'gsap'
 
 // Global status update function
@@ -165,6 +166,31 @@ export class App {
 
     await this.lighting.init()
     await this.city.init()
+
+    // Initialize gameplay player squad controller
+    this.squadController = new PlayerSquadController({
+      scene: this.scene,
+      hexMap: this.city,
+    })
+
+    // Hook squad controller to hex map cell clicks
+    this.city.interaction.onCellClicked = (cell) => {
+      return this.squadController.handleCellClicked(cell)
+    }
+
+    // Invalidate squad on regeneration start
+    this.city.onBeforeIslandGenerated = () => {
+      this.squadController.invalidate()
+    }
+
+    // Initialize squad when island generation completes
+    this.city.onIslandGenerated = (islandData, navGrid) => {
+      this.squadController.initIsland(islandData, navGrid)
+    }
+
+    if (this.city.currentIsland && this.city.navGrid) {
+      this.squadController.initIsland(this.city.currentIsland, this.city.navGrid)
+    }
 
     // Water mask: swap tile materials to unlit B&W mask material for mask RT render
     this._savedMats = new Map()
@@ -665,6 +691,9 @@ export class App {
 
     // Update debris physics
     this.city.update(dt)
+
+    // Update gameplay squad simulation & visuals
+    this.squadController?.update(dt)
 
     // Update render layers
     const maskObjects = []

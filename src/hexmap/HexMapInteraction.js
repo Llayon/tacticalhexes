@@ -204,6 +204,47 @@ export class HexMapInteraction {
     this.clearHoverHighlight()
   }
 
+  /**
+   * Resolve a canonical HexCell from the active IslandData given pointer coordinates and camera
+   * @param {Vector2} pointer Normalized device coordinates
+   * @param {Camera} camera
+   * @returns {import('../world/IslandData.js').HexCell|null}
+   */
+  resolveCellFromPointer(pointer, camera) {
+    const hm = this.hexMap
+    if (!hm?.currentIsland) return null
+
+    this.raycaster.setFromCamera(pointer, camera)
+
+    const hexMeshes = []
+    const meshToGrid = new Map()
+    for (const grid of hm.grids.values()) {
+      if (grid.state === HexGridState.POPULATED && grid.hexMesh) {
+        hexMeshes.push(grid.hexMesh)
+        meshToGrid.set(grid.hexMesh, grid)
+      }
+    }
+
+    if (hexMeshes.length === 0) return null
+
+    const intersects = this.raycaster.intersectObjects(hexMeshes)
+    if (intersects.length > 0) {
+      const hit = intersects[0]
+      const grid = meshToGrid.get(hit.object)
+      const batchId = hit.batchId ?? hit.instanceId
+      if (grid && batchId !== undefined) {
+        const tile = grid.hexTiles.find(t => t.instanceId === batchId)
+        if (tile) {
+          const globalCube = grid.globalCenterCube ?? { q: 0, r: 0, s: 0 }
+          const global = localToGlobalCoords(tile.gridX, tile.gridZ, grid.gridRadius, globalCube)
+          const globalCubeCoords = offsetToCube(global.col, global.row)
+          return hm.currentIsland.getCell(globalCubeCoords.q, globalCubeCoords.r, globalCubeCoords.s)
+        }
+      }
+    }
+    return null
+  }
+
   onPointerDown(pointer, camera) {
     this.hasClicked = true
     const hm = this.hexMap
@@ -231,31 +272,15 @@ export class HexMapInteraction {
       }
     }
 
-    // In move mode, log tile info on click
+    // In move mode, resolve canonical cell and emit to listener (e.g. gameplay squad controller)
     if (!App.instance?.buildMode) {
-      const hexMeshes = []
-      const meshToGrid = new Map()
-      for (const grid of hm.grids.values()) {
-        if (grid.state === HexGridState.POPULATED && grid.hexMesh) {
-          hexMeshes.push(grid.hexMesh)
-          meshToGrid.set(grid.hexMesh, grid)
+      const cell = this.resolveCellFromPointer(pointer, camera)
+      if (cell) {
+        if (this.onCellClicked && this.onCellClicked(cell)) {
+          return true
         }
-      }
-      if (hexMeshes.length > 0) {
-        const intersects = this.raycaster.intersectObjects(hexMeshes)
-        if (intersects.length > 0) {
-          const hit = intersects[0]
-          const grid = meshToGrid.get(hit.object)
-          const batchId = hit.batchId ?? hit.instanceId
-          if (grid && batchId !== undefined) {
-            const tile = grid.hexTiles.find(t => t.instanceId === batchId)
-            if (tile) {
-              const def = TILE_LIST[tile.type]
-              const globalCube = grid.globalCenterCube ?? { q: 0, r: 0, s: 0 }
-              const global = localToGlobalCoords(tile.gridX, tile.gridZ, grid.gridRadius, globalCube)
-              log(`[TILE INFO] (${global.col},${global.row}) ${def?.name || '?'} type=${tile.type} rot=${tile.rotation} level=${tile.level}`, 'color: blue')
-            }
-          }
+        if (this.debugTileInfo) {
+          log(`[TILE INFO] (${cell.col},${cell.row}) ${cell.name} type=${cell.type} rot=${cell.rotation} level=${cell.level}`, 'color: blue')
         }
       }
       return false
