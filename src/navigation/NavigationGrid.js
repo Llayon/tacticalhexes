@@ -55,6 +55,7 @@ export class NavigationGrid {
    * @returns {boolean}
    */
   isWalkable(cell) {
+    if (!this.containsCell(cell)) return false
     return isCellWalkable(cell)
   }
 
@@ -65,6 +66,7 @@ export class NavigationGrid {
    * @returns {boolean}
    */
   canTraverse(fromCell, toCell) {
+    if (!this.containsCell(fromCell) || !this.containsCell(toCell)) return false
     return canTraverse(fromCell, toCell)
   }
 
@@ -75,6 +77,7 @@ export class NavigationGrid {
    * @returns {number}
    */
   getMovementCost(fromCell, toCell) {
+    if (!this.containsCell(fromCell) || !this.containsCell(toCell)) return Infinity
     return getMovementCost(fromCell, toCell)
   }
 
@@ -84,7 +87,7 @@ export class NavigationGrid {
    * @returns {import('../world/IslandData.js').HexCell[]}
    */
   getNeighbors(cell) {
-    if (!cell) return []
+    if (!this.containsCell(cell)) return []
     const neighbors = []
     for (let i = 0; i < CUBE_DIRS.length; i++) {
       const dir = CUBE_DIRS[i]
@@ -102,7 +105,7 @@ export class NavigationGrid {
    * @returns {import('../world/IslandData.js').HexCell[]}
    */
   getAllAdjacentCells(cell) {
-    if (!cell) return []
+    if (!this.containsCell(cell)) return []
     const adjacent = []
     for (let i = 0; i < CUBE_DIRS.length; i++) {
       const dir = CUBE_DIRS[i]
@@ -130,7 +133,7 @@ export class NavigationGrid {
    */
   getReachableCells(startCell, maxCost = 5) {
     const reachable = new Map()
-    if (!startCell || !this.isWalkable(startCell)) return reachable
+    if (!this.containsCell(startCell) || !this.isWalkable(startCell)) return reachable
 
     // Priority queue / min cost map
     const costMap = new Map()

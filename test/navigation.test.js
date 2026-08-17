@@ -288,6 +288,50 @@ describe('NavigationGrid', () => {
     assert.equal(navA.containsCell(undefined), false)
     assert.equal(navA.containsCell({ q: 0, r: 0, s: 0 }), false)
   })
+
+  it('rejects stale or foreign cells across all public query methods', () => {
+    const islandA = new IslandData({ seed: 10, radius: 2 })
+    const islandB = new IslandData({ seed: 20, radius: 2 })
+
+    const cellFromIslandA = islandA.addCell(new HexCell({ q: 0, r: 0, s: 0, type: TileType.GRASS, level: 0 }))
+    const neighborA = islandA.addCell(new HexCell({ q: 1, r: -1, s: 0, type: TileType.GRASS, level: 0 }))
+
+    // Cell in islandB with identical coordinates
+    const cellFromIslandB = islandB.addCell(new HexCell({ q: 0, r: 0, s: 0, type: TileType.GRASS, level: 0 }))
+    const neighborB = islandB.addCell(new HexCell({ q: 1, r: -1, s: 0, type: TileType.GRASS, level: 0 }))
+
+    const navA = new NavigationGrid(islandA)
+
+    // isWalkable
+    assert.equal(navA.isWalkable(cellFromIslandA), true)
+    assert.equal(navA.isWalkable(cellFromIslandB), false)
+
+    // getNeighbors
+    assert.deepEqual(navA.getNeighbors(cellFromIslandB), [])
+    assert.equal(navA.getNeighbors(cellFromIslandA).length, 1)
+
+    // getAllAdjacentCells
+    assert.deepEqual(navA.getAllAdjacentCells(cellFromIslandB), [])
+    assert.equal(navA.getAllAdjacentCells(cellFromIslandA).length, 1)
+
+    // getReachableCells
+    const reachableFromB = navA.getReachableCells(cellFromIslandB)
+    assert.equal(reachableFromB.size, 0)
+    const reachableFromA = navA.getReachableCells(cellFromIslandA)
+    assert.ok(reachableFromA.size > 0)
+
+    // canTraverse
+    assert.equal(navA.canTraverse(cellFromIslandB, cellFromIslandA), false)
+    assert.equal(navA.canTraverse(cellFromIslandA, cellFromIslandB), false)
+    assert.equal(navA.canTraverse(cellFromIslandB, neighborB), false)
+    assert.equal(navA.canTraverse(cellFromIslandA, neighborA), true)
+
+    // getMovementCost
+    assert.equal(navA.getMovementCost(cellFromIslandB, cellFromIslandA), Infinity)
+    assert.equal(navA.getMovementCost(cellFromIslandA, cellFromIslandB), Infinity)
+    assert.equal(navA.getMovementCost(cellFromIslandB, neighborB), Infinity)
+    assert.equal(navA.getMovementCost(cellFromIslandA, neighborA), TerrainCost.NORMAL)
+  })
 })
 
 describe('Pathfinder (Deterministic Hex A*)', () => {
