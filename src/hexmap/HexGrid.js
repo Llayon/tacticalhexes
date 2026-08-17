@@ -71,6 +71,10 @@ export class HexGrid {
     this.hexTiles = []
     this.hexGrid = null  // 2D array
     this.hexMesh = null
+    this.geomIds = new Map()
+    this.bottomFills = new Map()
+    this.bottomGeomId = null
+    this.slopeArrows = []
     this.decorations = null
     this.gridHelper = null
     this.placeholder = null
@@ -143,7 +147,7 @@ export class HexGrid {
     // Calculate total vertices/indices for BatchedMesh
     let totalV = 0
     let totalI = 0
-    for (const geom of geometries.values()) {
+    for (const geom of (geometries?.values?.() || [])) {
       if (!geom) continue
       totalV += geom.attributes.position.count
       totalI += geom.index ? geom.index.count : 0
@@ -166,7 +170,7 @@ export class HexGrid {
 
     // Register geometries in BatchedMesh
     this.geomIds = new Map()
-    for (const [type, geom] of geometries) {
+    for (const [type, geom] of (geometries || [])) {
       if (geom) {
         const geomId = this.hexMesh.addGeometry(geom)
         this.geomIds.set(type, geomId)
@@ -182,7 +186,7 @@ export class HexGrid {
 
     // Initialize color buffer with a dummy white instance (fixes WebGPU color sync issue)
     // This ensures setColorAt is called before first render
-    const firstGeomId = this.geomIds.values().next().value
+    const firstGeomId = this.geomIds?.values?.().next?.().value
     if (firstGeomId !== undefined) {
       const WHITE = new Color(0xffffff)
       this.hexMesh._dummyInstanceId = this.hexMesh.addInstance(firstGeomId)
@@ -542,8 +546,10 @@ export class HexGrid {
     const rotationAngles = [0, 1, 2, 3, 4, 5].map(r => -r * Math.PI / 3)
     const gridRadius = this.gridRadius
     // Clear old bottom fills
-    for (const fillId of this.bottomFills.values()) {
-      this.hexMesh.deleteInstance(fillId)
+    if (this.bottomFills) {
+      for (const fillId of this.bottomFills.values()) {
+        if (this.hexMesh) this.hexMesh.deleteInstance(fillId)
+      }
     }
     this.bottomFills = new Map()
 
@@ -669,8 +675,10 @@ export class HexGrid {
           this.hexMesh.deleteInstance(tile.instanceId)
         }
       }
-      for (const fillId of this.bottomFills.values()) {
-        this.hexMesh.deleteInstance(fillId)
+      if (this.bottomFills) {
+        for (const fillId of this.bottomFills.values()) {
+          this.hexMesh.deleteInstance(fillId)
+        }
       }
     }
     this.bottomFills = new Map()

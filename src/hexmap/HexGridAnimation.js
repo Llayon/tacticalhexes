@@ -40,8 +40,10 @@ export function hideAllInstances(grid) {
     }
   }
 
-  for (const fillId of grid.bottomFills.values()) {
-    grid.hexMesh.setMatrixAt(fillId, dummy.matrix)
+  if (grid.bottomFills && grid.hexMesh) {
+    for (const fillId of grid.bottomFills.values()) {
+      grid.hexMesh.setMatrixAt(fillId, dummy.matrix)
+    }
   }
 
 }

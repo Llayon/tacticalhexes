@@ -370,8 +370,10 @@ export class HexMap {
   // === Accessors ===
   get hexTiles() {
     const allTiles = []
-    for (const grid of this.grids.values()) {
-      allTiles.push(...grid.hexTiles)
+    if (this.grids) {
+      for (const grid of this.grids.values()) {
+        if (grid.hexTiles) allTiles.push(...grid.hexTiles)
+      }
     }
     return allTiles
   }

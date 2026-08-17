@@ -343,13 +343,14 @@ export class WavesMask {
    * Pair score = min(dirA_weight, dirB_weight). Range: 0.0–3.0.
    */
   _computeCoveCells(globalCells) {
+    if (!globalCells) return []
     const cutoff = this._coveCutoff
     const radius = this._coveRadius
     const maxSteps = Math.ceil(radius)
     const pairs = [[0, 3], [1, 4], [2, 5]]
     const results = []
 
-    for (const cell of globalCells.values()) {
+    for (const cell of (globalCells?.values?.() || [])) {
       if (cell.type !== TileType.WATER) continue
 
       const weights = new Float32Array(6)

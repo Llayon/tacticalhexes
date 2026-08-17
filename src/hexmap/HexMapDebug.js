@@ -151,42 +151,54 @@ export class HexMapDebug {
     } else {
       this.clearTileLabels()
     }
-    this.hexMap.tileLabels.visible = visible
+    if (this.hexMap.tileLabels) {
+      this.hexMap.tileLabels.visible = visible
+    }
 
-    for (const grid of this.hexMap.grids.values()) {
-      grid.setGridLabelVisible(visible)
+    if (this.hexMap.grids) {
+      for (const grid of this.hexMap.grids.values()) {
+        grid.setGridLabelVisible(visible)
+      }
     }
   }
 
   setHelpersVisible(visible) {
     this.hexMap.helpersVisible = visible
-    for (const grid of this.hexMap.grids.values()) {
-      grid.setHelperVisible(visible)
+    if (this.hexMap.grids) {
+      for (const grid of this.hexMap.grids.values()) {
+        grid.setHelperVisible(visible)
+      }
     }
   }
 
   setAxesHelpersVisible(visible) {
     this.hexMap.axesHelpersVisible = visible
-    for (const grid of this.hexMap.grids.values()) {
-      if (grid.axesHelper) {
-        grid.axesHelper.visible = visible
+    if (this.hexMap.grids) {
+      for (const grid of this.hexMap.grids.values()) {
+        if (grid.axesHelper) {
+          grid.axesHelper.visible = visible
+        }
       }
     }
   }
 
   setOutlinesVisible(visible) {
     this._outlinesVisible = visible
-    for (const grid of this.hexMap.grids.values()) {
-      if (grid.outline) {
-        grid.outline.visible = grid.state === HexGridState.POPULATED ? visible : true
+    if (this.hexMap.grids) {
+      for (const grid of this.hexMap.grids.values()) {
+        if (grid.outline) {
+          grid.outline.visible = grid.state === HexGridState.POPULATED ? visible : true
+        }
       }
     }
   }
 
   repopulateDecorations() {
-    for (const grid of this.hexMap.grids.values()) {
-      if (grid.state === HexGridState.POPULATED) {
-        grid.populateDecorations()
+    if (this.hexMap.grids) {
+      for (const grid of this.hexMap.grids.values()) {
+        if (grid.state === HexGridState.POPULATED) {
+          grid.populateDecorations()
+        }
       }
     }
   }
@@ -210,16 +222,18 @@ export class HexMapDebug {
 
   updateTileColors() {
     this._updateColorNode()
-    for (const grid of this.hexMap.grids.values()) {
-      if (grid.state === HexGridState.POPULATED) {
-        grid.updateTileColors()
+    if (this.hexMap.grids) {
+      for (const grid of this.hexMap.grids.values()) {
+        if (grid.state === HexGridState.POPULATED) {
+          grid.updateTileColors()
+        }
       }
     }
   }
 
   getOverlayObjects() {
     const hm = this.hexMap
-    if (hm.isRegenerating) return []
+    if (!hm || hm.isRegenerating || !hm.grids) return []
 
     const overlays = []
     for (const grid of hm.grids.values()) {

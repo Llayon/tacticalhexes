@@ -163,7 +163,8 @@ export class Decorations {
 
     // Create single BatchedMesh for all decorations
     let totalV = 0, totalI = 0
-    for (const geom of allGeoms.values()) {
+    for (const geom of (allGeoms?.values?.() || [])) {
+      if (!geom) continue
       totalV += geom.attributes.position.count
       totalI += geom.index ? geom.index.count : 0
     }
@@ -174,18 +175,20 @@ export class Decorations {
     this.scene.add(mesh)
 
     const idMap = new Map()
-    for (const [name, geom] of allGeoms) {
-      idMap.set(name, mesh.addGeometry(geom))
+    for (const [name, geom] of (allGeoms || [])) {
+      if (geom) idMap.set(name, mesh.addGeometry(geom))
     }
 
     // Dummy white instance (fixes WebGPU color sync issue)
-    const firstGeomId = idMap.values().next().value
-    mesh._dummyInstanceId = mesh.addInstance(firstGeomId)
-    mesh.setColorAt(mesh._dummyInstanceId, WHITE)
-    this.dummy.position.set(0, -1000, 0)
-    this.dummy.scale.setScalar(0)
-    this.dummy.updateMatrix()
-    mesh.setMatrixAt(mesh._dummyInstanceId, this.dummy.matrix)
+    const firstGeomId = idMap?.values?.().next?.().value
+    if (firstGeomId !== undefined) {
+      mesh._dummyInstanceId = mesh.addInstance(firstGeomId)
+      mesh.setColorAt(mesh._dummyInstanceId, WHITE)
+      this.dummy.position.set(0, -1000, 0)
+      this.dummy.scale.setScalar(0)
+      this.dummy.updateMatrix()
+      mesh.setMatrixAt(mesh._dummyInstanceId, this.dummy.matrix)
+    }
 
     this.mesh = mesh
     this.geomIds = idMap

@@ -196,8 +196,8 @@ export class App {
     this._savedMats = new Map()
     this.postFX.onWaterMaskRender = (enabled) => {
       if (enabled) {
-        const maskMat = this.city.waterMaskMaterial
-        if (!maskMat) return
+        const maskMat = this.city?.waterMaskMaterial
+        if (!maskMat || !this.city?.grids) return
         for (const grid of this.city.grids.values()) {
           if (grid.hexMesh && grid.hexMesh.material) {
             this._savedMats.set(grid.hexMesh, grid.hexMesh.material)
@@ -277,10 +277,14 @@ export class App {
         this._waveFade.mask = 0
 
         const tileMeshes = []
-        for (const grid of this.city.grids.values()) {
-          if (grid.hexMesh) tileMeshes.push(grid.hexMesh)
+        if (this.city?.grids) {
+          for (const grid of this.city.grids.values()) {
+            if (grid.hexMesh) tileMeshes.push(grid.hexMesh)
+          }
         }
-        this.wavesMask.render(this.scene, tileMeshes, this.city.waterPlane, this.city.globalCells)
+        if (this.wavesMask && this.city?.waterPlane && this.city?.globalCells) {
+          this.wavesMask.render(this.scene, tileMeshes, this.city.waterPlane, this.city.globalCells)
+        }
 
         gsap.to(this._waveFade, {
           opacity: this.params.waves.opacity,
@@ -352,13 +356,18 @@ export class App {
     // Pre-render full pipeline to compile GPU shaders while screen is still black
     // BatchedMeshes already have a dummy instance from initMeshes()
     const tileMeshes = []
-    for (const grid of this.city.grids.values()) {
-      if (grid.hexMesh) tileMeshes.push(grid.hexMesh)
+    if (this.city?.grids) {
+      for (const grid of this.city.grids.values()) {
+        if (grid.hexMesh) tileMeshes.push(grid.hexMesh)
+      }
     }
-    this.wavesMask.render(this.scene, tileMeshes, this.city.waterPlane, this.city.globalCells)
-    this.postFX.setOverlayObjects(this.city.getOverlayObjects())
-
-    this.postFX.setWaterObjects(this.city.getWaterObjects())
+    if (this.wavesMask && this.city?.waterPlane && this.city?.globalCells) {
+      this.wavesMask.render(this.scene, tileMeshes, this.city.waterPlane, this.city.globalCells)
+    }
+    if (this.city) {
+      this.postFX.setOverlayObjects(this.city.getOverlayObjects?.() || [])
+      this.postFX.setWaterObjects(this.city.getWaterObjects?.() || [])
+    }
     this.postFX.render()
 
     this.timer.connect(document)
@@ -690,22 +699,25 @@ export class App {
     }
 
     // Update debris physics
-    this.city.update(dt)
+    this.city?.update(dt)
 
     // Update gameplay squad simulation & visuals
     this.squadController?.update(dt)
 
     // Update render layers
     const maskObjects = []
-    for (const grid of this.city.grids.values()) {
-      if (grid.hexMesh) maskObjects.push(grid.hexMesh)
-      if (grid.decorations?.mesh) maskObjects.push(grid.decorations.mesh)
+    if (this.city?.grids) {
+      for (const grid of this.city.grids.values()) {
+        if (grid.hexMesh) maskObjects.push(grid.hexMesh)
+        if (grid.decorations?.mesh) maskObjects.push(grid.decorations.mesh)
+      }
     }
-    postFX.setWaterMaskObjects(maskObjects)
-    postFX.setOverlayObjects(this.city.getOverlayObjects())
-    postFX.setWaterObjects(this.city.getWaterObjects())
-
-    postFX.render()
+    if (this.postFX && this.city) {
+      postFX.setWaterMaskObjects(maskObjects)
+      postFX.setOverlayObjects(this.city.getOverlayObjects?.() || [])
+      postFX.setWaterObjects(this.city.getWaterObjects?.() || [])
+      postFX.render()
+    }
 
     // Debug: show coast mask RT in bottom-left corner
     if (this.wavesMask?.showDebug) this.wavesMask.renderDebug()

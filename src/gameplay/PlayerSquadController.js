@@ -87,38 +87,78 @@ export class PlayerSquadController {
       return false
     }
 
-    // Case 1: Tapping the squad's own current cell or occupied location
-    const isSquadCell = (cell === this.squad.cell) || (cell.key === this.squad.cell.key)
-    if (isSquadCell) {
+    // Case 1: Tapping the squad's own current cell or upcoming segment node
+    const isCurrentCell = (cell === this.squad.cell) || (cell.key === this.squad.cell.key)
+    const nextCell = this.squad.getNextCell()
+    const isNextCell = this.squad.isMovingSegment() && nextCell && (cell === nextCell || cell.key === nextCell.key)
+
+    if (isCurrentCell && !this.squad.isMovingSegment()) {
       this.selectSquad(!this.isSelected)
       return true
     }
 
     // Case 2: Tapping terrain while squad is NOT selected
     if (!this.isSelected) {
-      return false // Permit normal unhandled interaction
+      if (isCurrentCell || isNextCell) {
+        this.selectSquad(true)
+        return true
+      }
+      return false // Permit normal unhandled interaction (e.g. camera)
     }
 
-    // Case 3: Squad IS selected -> Issue Move Command
+    // Case 3: Squad IS selected -> Issue Move / Reroute Command
     if (!this.navGrid.isWalkable(cell)) {
       // Non-walkable terrain (e.g. water) -> reject move command
       Sounds.play('incorrect')
       return true
     }
 
-    // Compute A* path from squad's current authoritative domain cell to goal
-    const path = this.pathfinder.findPath(this.squad.cell, cell)
+    // Check if squad is currently moving between nodes
+    if (this.squad.isMovingSegment()) {
+      const currentSegment = this.squad.getCurrentSegment()
+      if (!currentSegment) return false
 
-    if (path && path.length > 1) {
-      // Valid path found
-      this.squad.setPath(path)
-      this.pathRenderer.showPath(path)
-      Sounds.play('pop', 0.9, 0.2, 0.8)
-      return true
+      const fromCell = currentSegment.fromCell
+      const targetNextCell = currentSegment.toCell
+
+      // If clicked the exact cell we are already traveling towards
+      if (cell === targetNextCell || cell.key === targetNextCell.key) {
+        this.squad.truncatePathAtNextNode()
+        this.pathRenderer?.showPath([fromCell, targetNextCell])
+        Sounds.play('pop', 0.9, 0.2, 0.8)
+        return true
+      }
+
+      // Compute A* path from upcoming node to new destination
+      const pathFromNext = this.pathfinder.findPath(targetNextCell, cell)
+      if (pathFromNext && pathFromNext.length > 1) {
+        this.squad.setPendingDestination(cell, pathFromNext)
+        // Coherent visualization: current segment [fromCell, targetNextCell] + remainder of new path
+        this.pathRenderer?.showPath([fromCell, ...pathFromNext])
+        Sounds.play('pop', 0.9, 0.2, 0.8)
+        return true
+      } else {
+        // Unreachable from upcoming node
+        Sounds.play('incorrect')
+        return true
+      }
     } else {
-      // Blocked / unreachable destination (e.g. sheer cliffs without slopes)
-      Sounds.play('incorrect')
-      return true
+      // Squad is idle (or stopped at a node)
+      if (isCurrentCell) {
+        this.selectSquad(false)
+        return true
+      }
+
+      const path = this.pathfinder.findPath(this.squad.cell, cell)
+      if (path && path.length > 1) {
+        this.squad.setPath(path)
+        this.pathRenderer?.showPath(path)
+        Sounds.play('pop', 0.9, 0.2, 0.8)
+        return true
+      } else {
+        Sounds.play('incorrect')
+        return true
+      }
     }
   }
 
@@ -146,21 +186,22 @@ export class PlayerSquadController {
     }
 
     const squad = this.squad
+    // Clamp delta time to avoid large jumps, NaN, or skipping simulation during tab switches
+    const safeDt = Math.min(Math.max(Number.isFinite(dt) ? dt : 0, 0), 0.1)
 
     if (squad.state === SquadState.MOVING && squad.path.length > 1) {
-      const fromCell = squad.path[squad.currentPathIndex]
-      const toCell = squad.path[squad.currentPathIndex + 1]
+      const segment = squad.getCurrentSegment()
 
-      if (fromCell && toCell) {
-        const p0 = getCellWorldPosition(fromCell)
-        const p1 = getCellWorldPosition(toCell)
+      if (segment && segment.fromCell && segment.toCell) {
+        const p0 = getCellWorldPosition(segment.fromCell)
+        const p1 = getCellWorldPosition(segment.toCell)
 
         const dx = p1.x - p0.x
         const dy = p1.y - p0.y
         const dz = p1.z - p0.z
         const segmentDist = Math.hypot(dx, dy, dz)
 
-        const step = segmentDist > 0 ? (squad.moveSpeed * dt) / segmentDist : 1.0
+        const step = segmentDist > 0.0001 ? (squad.moveSpeed * safeDt) / segmentDist : 1.0
         squad.segmentProgress += step
 
         // Facing rotation towards movement direction
@@ -179,16 +220,25 @@ export class PlayerSquadController {
         // Check if node is reached
         if (squad.segmentProgress >= 1.0) {
           const hasMore = squad.advanceToNextNode()
-          if (!hasMore) {
-            // Reached destination!
+          if (hasMore) {
+            if (this.pathRenderer) {
+              const remainingPath = squad.path.slice(squad.currentPathIndex)
+              this.pathRenderer.showPath(remainingPath)
+            }
+          } else {
+            // Reached final destination!
             const finalPos = getCellWorldPosition(squad.cell)
             this.squadRenderer.setPosition(finalPos.x, finalPos.y, finalPos.z)
-            this.pathRenderer.clear()
+            if (this.pathRenderer) {
+              this.pathRenderer.clear()
+            }
           }
         }
       } else {
         squad.stop()
-        this.pathRenderer.clear()
+        if (this.pathRenderer) {
+          this.pathRenderer.clear()
+        }
       }
     } else {
       // Idle on current cell
@@ -196,7 +246,7 @@ export class PlayerSquadController {
       this.squadRenderer.setPosition(pos.x, pos.y, pos.z)
     }
 
-    this.squadRenderer.update(dt, squad.state === SquadState.MOVING)
+    this.squadRenderer.update(safeDt, squad.state === SquadState.MOVING)
   }
 
   /**

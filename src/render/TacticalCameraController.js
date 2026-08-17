@@ -305,10 +305,12 @@ export class TacticalCameraController {
           this._gestureConsumed = false
         }
       }, 0)
-    } else if (this._pointers.size === 1) {
+    } else if (this._pointers && this._pointers.size === 1) {
       // Switched from pinch to 1 finger
       const remaining = Array.from(this._pointers.values())[0]
-      this._lastPointerPos = { x: remaining.x, y: remaining.y }
+      if (remaining) {
+        this._lastPointerPos = { x: remaining.x, y: remaining.y }
+      }
       this._previousTouchDistance = null
     }
   }
@@ -328,6 +330,7 @@ export class TacticalCameraController {
   }
 
   _getTouchDistance() {
+    if (!this._pointers) return null
     const pts = Array.from(this._pointers.values())
     if (pts.length < 2) return null
     const dx = pts[0].x - pts[1].x

@@ -132,6 +132,7 @@ export class HexMapInteraction {
 
   onPointerMove(pointer, camera) {
     const hm = this.hexMap
+    if (!hm?.grids) return
     this.raycaster.setFromCamera(pointer, camera)
 
     const placeholderClickables = []
@@ -212,7 +213,7 @@ export class HexMapInteraction {
    */
   resolveCellFromPointer(pointer, camera) {
     const hm = this.hexMap
-    if (!hm?.currentIsland) return null
+    if (!hm?.grids || !hm?.currentIsland) return null
 
     this.raycaster.setFromCamera(pointer, camera)
 
@@ -248,6 +249,8 @@ export class HexMapInteraction {
   onPointerDown(pointer, camera) {
     this.hasClicked = true
     const hm = this.hexMap
+    if (!hm?.grids) return false
+
     const placeholderClickables = []
     for (const grid of hm.grids.values()) {
       if (grid.state === HexGridState.PLACEHOLDER) {

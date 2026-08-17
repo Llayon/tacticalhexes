@@ -191,6 +191,7 @@ export class HexTileGeometry {
     } catch (e) {
       console.warn('HexTileGeometry: Failed to load', glbPath, e)
       this.loaded = false
+      throw e
     }
   }
 

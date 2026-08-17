@@ -93,21 +93,21 @@ export function weightedPick(defs) {
 // Check if a tile type has any road edges
 export function hasRoadEdge(tileType) {
   const def = TILE_LIST[tileType]
-  if (!def) return false
+  if (!def || !def.edges) return false
   return Object.values(def.edges).some(edge => edge === 'road')
 }
 
 export function isCoastOrWater(tileType) {
   const def = TILE_LIST[tileType]
   if (!def) return false
-  return def.name.startsWith('COAST_') || def.name === 'WATER'
+  return def.name?.startsWith('COAST_') || def.name === 'WATER'
 }
 
 // Check if a tile is a road dead-end (exactly 1 road edge) and return the exit direction
 // Returns { isDeadEnd: true, exitDir } or { isDeadEnd: false }
 export function getRoadDeadEndInfo(tileType, rotation) {
   const def = TILE_LIST[tileType]
-  if (!def) return { isDeadEnd: false }
+  if (!def || !def.edges) return { isDeadEnd: false }
 
   // Count road edges and find the exit direction
   const dirs = ['NE', 'E', 'SE', 'SW', 'W', 'NW']
