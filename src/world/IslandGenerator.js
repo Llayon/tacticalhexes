@@ -7,6 +7,7 @@ import { IslandData, HexCell } from './IslandData.js'
 import { cubeCoordsInRadius, cubeKey } from '../hexmap/HexWFCCore.js'
 import { TileType, TILE_LIST, LEVELS_COUNT } from '../hexmap/HexTileData.js'
 import { generateElevationField } from './terrain/ElevationField.js'
+import { TerrainAnalysis } from './terrain/TerrainAnalysis.js'
 import { NavigationGrid } from '../navigation/NavigationGrid.js'
 import { setSeed, random } from '../SeededRandom.js'
 
@@ -103,30 +104,17 @@ export class IslandGenerator {
    * Log comprehensive terrain diagnostics
    */
   logDiagnostics({ seed, attempt, elevationField, island, connectivity, tries, backtracks }) {
-    const allCells = island.getAllCells()
-    const levelCounts = {}
-    for (let l = 0; l < LEVELS_COUNT; l++) levelCounts[l] = 0
-
-    let slopeCount = 0
-    let cliffCount = 0
-    let minLevel = LEVELS_COUNT
-    let maxLevel = 0
-
-    for (const cell of allCells) {
-      const lvl = cell.level ?? 0
-      levelCounts[lvl] = (levelCounts[lvl] || 0) + 1
-      if (lvl < minLevel) minLevel = lvl
-      if (lvl > maxLevel) maxLevel = lvl
-
-      if (cell.isSlope) slopeCount++
-      if (cell.isCliff) cliffCount++
-    }
+    const analysis = island.analysis || TerrainAnalysis.analyze(island, { radius: island.radius })
+    const levelCounts = analysis.levelCounts
 
     const lines = [
-      `[TERRAIN] seed: ${seed} (attempt: ${attempt}, profile: ${elevationField.profile})`,
+      `[TERRAIN] seed: ${seed} (attempt: ${attempt}, archetype: ${elevationField.archetype}, profile: ${elevationField.profile})`,
       `  levels: ${Object.entries(levelCounts).map(([l, c]) => `L${l}:${c}`).join(' ')}`,
-      `  slopes: ${slopeCount} | cliffs: ${cliffCount}`,
-      `  elevation range: [${minLevel}..${maxLevel}] (distinct: ${Object.values(levelCounts).filter(c => c > 0).length})`,
+      `  plateaus: largest=${analysis.largestPlateauSize} cells, total=${analysis.plateauCount}`,
+      `  cliffs: ${analysis.cliffEdgeCount} | slopes: ${analysis.slopeAccessCount}`,
+      `  radialCorrelation: ${analysis.radialPyramidCorrelation} | asymmetry: ${analysis.asymmetryScore}`,
+      `  reachableElevated: ${analysis.reachableElevatedCount} (${(analysis.reachableElevatedRatio * 100).toFixed(1)}%)`,
+      `  qualityScore: ${analysis.qualityScore}`,
       `  walkable connectivity: ${(connectivity.ratio * 100).toFixed(1)}% (${connectivity.mainCompCount}/${connectivity.walkableCount} cells, reachable levels: [${connectivity.mainLevels.join(',')}])`,
       `  WFC stats: ${tries || 1} tries, ${backtracks || 0} backtracks`,
     ]
@@ -141,9 +129,10 @@ export class IslandGenerator {
    * @param {number} [options.radius=5]
    * @param {Array<number>} [options.tileTypes]
    * @param {string} [options.profile]
+   * @param {string} [options.archetype]
    * @returns {Promise<IslandData>}
    */
-  async generate({ seed = Math.floor(Math.random() * 1000000), radius = 5, tileTypes = null, profile = null } = {}) {
+  async generate({ seed = Math.floor(Math.random() * 1000000), radius = 5, tileTypes = null, profile = null, archetype = null } = {}) {
     const allowedTypes = tileTypes || TILE_LIST.map((_, i) => i)
     const allSolveCells = cubeCoordsInRadius(0, 0, 0, radius)
 
@@ -161,6 +150,7 @@ export class IslandGenerator {
         seed: attemptSeed,
         radius,
         profile: attempt === 0 ? profile : null,
+        archetype: attempt === 0 ? archetype : null,
       })
 
       // 2. Generate per-cell WFC state constraints
@@ -211,6 +201,8 @@ export class IslandGenerator {
 
         island.elevationField = elevationField
         island.profile = elevationField.profile
+        island.archetype = elevationField.archetype
+        island.analysis = TerrainAnalysis.analyze(island, { radius })
 
         // 6. Connectivity validation
         const connectivity = this.analyzeConnectivity(island)

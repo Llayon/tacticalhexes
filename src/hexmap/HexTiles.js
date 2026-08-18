@@ -143,10 +143,13 @@ export class HexTileGeometry {
   static HEX_WIDTH = 2   // Will be updated from mesh bounds
   static HEX_HEIGHT = 2  // Will be updated from mesh bounds
 
-  static async init(glbPath = './assets/models/hex-roads.glb') {
+  static async init(glbPath = `${import.meta.env?.BASE_URL || './'}assets/models/hex-terrain.glb`) {
     const loader = new GLTFLoader()
     try {
       const gltf = await loader.loadAsync(glbPath)
+      if (!gltf || !gltf.scene) {
+        throw new Error(`GLTFLoader returned invalid or empty scene`)
+      }
       this.gltfScene = gltf.scene
 
       // Extract material from first mesh
@@ -155,6 +158,9 @@ export class HexTileGeometry {
           this.material = child.material
         }
       })
+
+      // Reset cached geometries
+      this.geoms.clear()
 
       // Load geometries for all active tile types
       for (let type = 0; type < TILE_LIST.length; type++) {
@@ -177,6 +183,37 @@ export class HexTileGeometry {
         this.bottomGeom = bottomResult.geom
       }
 
+      // Validate required geometries exist
+      const requiredTiles = [
+        { type: TileType.GRASS, label: 'GRASS' },
+        { type: TileType.WATER, label: 'WATER' },
+      ]
+
+      for (const req of requiredTiles) {
+        const expectedMesh = TILE_LIST[req.type]?.mesh
+        if (!this.geoms.has(req.type)) {
+          throw new Error(
+            `Required base terrain mesh '${expectedMesh}' for ${req.label} was not found in ${glbPath}`
+          )
+        }
+      }
+
+      // Validate slope meshes if slope tiles are defined in TILE_LIST
+      for (let type = 0; type < TILE_LIST.length; type++) {
+        const tile = TILE_LIST[type]
+        if (tile && tile.highEdges && tile.highEdges.length > 0) {
+          if (!this.geoms.has(type)) {
+            throw new Error(
+              `Required slope mesh '${tile.mesh}' for tile type ${type} (${tile.name || 'unnamed'}) was not found in ${glbPath}`
+            )
+          }
+        }
+      }
+
+      if (this.geoms.size === 0) {
+        throw new Error(`No valid tile geometries could be extracted from: ${glbPath}`)
+      }
+
       // Calculate hex dimensions from grass tile
       const grassGeom = this.geoms.get(TileType.GRASS)
       if (grassGeom) {
@@ -189,9 +226,10 @@ export class HexTileGeometry {
       console.log(`[GLB] Cached ${this.geoms.size} tile geometries`)
       this.loaded = true
     } catch (e) {
-      console.warn('HexTileGeometry: Failed to load', glbPath, e)
       this.loaded = false
-      throw e
+      const errorMsg = `Failed to load canonical terrain asset:\n${glbPath}\n${e?.message || e}`
+      console.error(errorMsg, e)
+      throw new Error(errorMsg, { cause: e })
     }
   }
 

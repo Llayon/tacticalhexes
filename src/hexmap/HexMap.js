@@ -88,13 +88,9 @@ export class HexMap {
   }
 
   async init() {
-    // Load primary terrain assets
-    try {
-      await HexTileGeometry.init('./assets/models/hex-terrain.glb')
-    } catch (err) {
-      console.warn('Fallback loading tiles.glb...', err)
-      await HexTileGeometry.init('./assets/models/tiles.glb')
-    }
+    // Load primary terrain assets using canonical base-aware URL
+    const terrainGlbUrl = `${import.meta.env.BASE_URL}assets/models/hex-terrain.glb`
+    await HexTileGeometry.init(terrainGlbUrl)
 
     if (HexTileGeometry.gltfScene) {
       Decorations.initGeometries(HexTileGeometry.gltfScene)
