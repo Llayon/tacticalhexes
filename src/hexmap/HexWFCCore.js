@@ -261,6 +261,11 @@ export class HexWFCAdjacencyRules {
           levelIndex[edgeLevel] = new Set()
         }
         levelIndex[edgeLevel].add(stateKey)
+
+        if (edgeType === 'grass') {
+          if (!levelIndex['any']) levelIndex['any'] = new Set()
+          levelIndex['any'].add(stateKey)
+        }
       }
 
       rules.stateEdges.set(stateKey, stateEdgeInfo)
@@ -275,9 +280,13 @@ export class HexWFCAdjacencyRules {
 
   /**
    * Get states that have a specific edge type, direction, AND level
-   * O(1) lookup - used for fast constraint propagation
+   * O(1) lookup - used for fast constraint propagation.
+   * For grass edges, connects at any level (matching edgesCompatible and vertical cliff mesh logic).
    */
   getByEdge(edgeType, direction, level) {
+    if (edgeType === 'grass') {
+      return this.byEdge.get('grass')?.[direction]?.['any'] ?? new Set()
+    }
     return this.byEdge.get(edgeType)?.[direction]?.[level] ?? new Set()
   }
 

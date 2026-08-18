@@ -23,12 +23,13 @@ import {
 // WFC Solver (cube-coordinate based)
 // ============================================================================
 
-class HexWFCSolver {
+export class HexWFCSolver {
   constructor(rules, options = {}) {
     this.rules = rules
     this.options = {
       maxTries: options.maxTries ?? 2,
       tileTypes: options.tileTypes ?? null,
+      allowedStatesByCell: options.allowedStatesByCell ?? null,
       log: options.log ?? (() => {}),
       attemptNum: options.attemptNum ?? 0,
       gridId: options.gridId ?? '',
@@ -84,11 +85,18 @@ class HexWFCSolver {
       }
     }
 
-    // Create solve cells with full possibility space
+    // Create solve cells with full possibility space or macro elevation constraints
     this.cells = new Map()
+    const allowedByCell = this.options.allowedStatesByCell
     for (const { q, r, s } of solveCells) {
       const key = cubeKey(q, r, s)
-      this.cells.set(key, new HexWFCCell(allStates))
+      const allowed = allowedByCell?.[key]
+      if (allowed && allowed.length > 0) {
+        const cellStates = allowed.map(k => HexWFCCell.parseKey(k))
+        this.cells.set(key, new HexWFCCell(cellStates))
+      } else {
+        this.cells.set(key, new HexWFCCell(allStates))
+      }
     }
 
     // Store fixed cells
@@ -690,56 +698,59 @@ class HexWFCSolver {
 
 let currentRequestId = null
 
-self.onmessage = function(e) {
-  const { type, id } = e.data
+if (typeof self !== 'undefined' && typeof self.postMessage === 'function') {
+  self.onmessage = function(e) {
+    const { type, id } = e.data
 
-  if (type === 'init') {
-    if (e.data.seed != null) {
-      setSeed(e.data.seed)
-    }
-    return
-  }
-
-  if (type === 'solve') {
-    currentRequestId = id
-    const { solveCells, fixedCells, options } = e.data
-
-    const tileTypes = options?.tileTypes ?? null
-    const rules = HexWFCAdjacencyRules.fromTileDefinitions(tileTypes)
-
-    const solver = new HexWFCSolver(rules, {
-      ...options,
-      log: (message, color) => {
-        if (currentRequestId === id) {
-          self.postMessage({ type: 'log', id, message, color })
-        }
+    if (type === 'init') {
+      if (e.data.seed != null) {
+        setSeed(e.data.seed)
       }
-    })
+      return
+    }
 
-    // Initialize neighbor cell data before solving
-    solver.initNeighborData(options?.neighborCells)
+    if (type === 'solve') {
+      currentRequestId = id
+      const { solveCells, fixedCells, options } = e.data
 
-    const result = solver.solve(
-      solveCells,
-      fixedCells,
-      options?.initialCollapses ?? []
-    )
-    const collapseOrder = solver.collapseOrder || []
-    const neighborConflict = solver.neighborConflict
-    const lastConflict = solver.lastConflict
+      const tileTypes = options?.tileTypes ?? null
+      const rules = HexWFCAdjacencyRules.fromTileDefinitions(tileTypes)
 
-    self.postMessage({
-      type: 'result',
-      id,
-      success: result !== null,
-      tiles: result,
-      collapseOrder,
-      neighborConflict,
-      lastConflict,
-      changedFixedCells: solver.changedFixedCells || [],
-      unfixedKeys: solver.unfixedKeys || [],
-      backtracks: solver.backtracks || 0,
-      tries: solver.tryCount || 0,
-    })
+      const solver = new HexWFCSolver(rules, {
+        ...options,
+        log: (message, color) => {
+          if (currentRequestId === id) {
+            self.postMessage({ type: 'log', id, message, color })
+          }
+        }
+      })
+
+      // Initialize neighbor cell data before solving
+      solver.initNeighborData(options?.neighborCells)
+
+      const result = solver.solve(
+        solveCells,
+        fixedCells,
+        options?.initialCollapses ?? []
+      )
+      const collapseOrder = solver.collapseOrder || []
+      const neighborConflict = solver.neighborConflict
+      const lastConflict = solver.lastConflict
+
+      self.postMessage({
+        type: 'result',
+        id,
+        success: result !== null,
+        tiles: result,
+        collapseOrder,
+        neighborConflict,
+        lastConflict,
+        changedFixedCells: solver.changedFixedCells || [],
+        unfixedKeys: solver.unfixedKeys || [],
+        backtracks: solver.backtracks || 0,
+        tries: solver.tryCount || 0,
+      })
+    }
   }
 }
+
